@@ -1,130 +1,188 @@
+using System;
+using System.Collections;
 using System.IO;
-using UnityEngine;
-using UnityEngine.UI;
+using System.Text;
 using TMPro;
+using UnityEngine;
+using UnityEngine.Networking;
+using UnityEngine.UI;
 
-#if UNITY_EDITOR
-using UnityEditor; // Necesario para obtener la ruta de la carpeta desde el Inspector
-#endif
+/// <summary>
+/// Holds the student identity for the current app session. The session code can
+/// be supplied by the session-join flow when that screen is implemented.
+/// </summary>
+public static class StudentSessionContext
+{
+    public static string StudentName { get; private set; }
+    public static string StudentId { get; private set; }
+    public static string SessionId { get; private set; }
+
+    public static void SetSessionId(string sessionId)
+    {
+        SessionId = string.IsNullOrWhiteSpace(sessionId) ? null : sessionId.Trim();
+    }
+
+    public static void SetStudent(string name, string studentId)
+    {
+        StudentName = name;
+        StudentId = studentId;
+    }
+}
 
 public class StudentNameController : MonoBehaviour
 {
+    private const int MinNameLength = 2;
+    private const int MaxNameLength = 60;
+
     [Header("UI References")]
     [SerializeField] private TMP_InputField inputFieldName;
     [SerializeField] private Button continueButton;
+    [SerializeField] private string serverBaseUrl = "http://127.0.0.1:5080";
 
-    [Header("Panels Navigation")]
-    [SerializeField] private GameObject currentPanel; // PANEL_Name
-    [SerializeField] private GameObject nextPanel;    // Siguiente panel
+    [Header("Panel Navigation")]
+    [SerializeField] private GameObject currentPanel;
+    [SerializeField] private GameObject nextPanel;
 
-    [Header("Folder Configuration")]
-    [Tooltip("Arrastra aquí la carpeta del proyecto donde se guardará el JSON")]
-    [SerializeField] private Object targetFolder; // Permite arrastrar la carpeta desde la ventana Project
-
-    private string studentName = "";
+    private string studentName = string.Empty;
+    private string originalPlaceholder;
 
     private void Start()
     {
+        if (inputFieldName != null)
+        {
+            inputFieldName.characterLimit = MaxNameLength;
+            inputFieldName.onValueChanged.AddListener(ValidateInput);
+            if (inputFieldName.placeholder is TMP_Text placeholder)
+                originalPlaceholder = placeholder.text;
+            ValidateInput(inputFieldName.text);
+        }
+
         if (continueButton != null)
         {
             continueButton.interactable = false;
             continueButton.onClick.AddListener(OnContinuePressed);
         }
+    }
 
+    private void OnDestroy()
+    {
         if (inputFieldName != null)
-        {
-            inputFieldName.onValueChanged.AddListener(ValidateInput);
-        }
+            inputFieldName.onValueChanged.RemoveListener(ValidateInput);
+
+        if (continueButton != null)
+            continueButton.onClick.RemoveListener(OnContinuePressed);
     }
 
     private void ValidateInput(string input)
     {
-        string trimmedInput = input.Trim();
+        studentName = (input ?? string.Empty).Trim();
+        bool isValid = studentName.Length >= MinNameLength && studentName.Length <= MaxNameLength;
 
-        bool hasMoreThanSixChars = input.Length > 6;
-        bool hasSpace = input.Contains(" ");
-
-        if (hasMoreThanSixChars && hasSpace)
-        {
-            continueButton.interactable = true;
-            studentName = trimmedInput;
-        }
-        else
-        {
-            continueButton.interactable = false;
-        }
+        if (continueButton != null)
+            continueButton.interactable = isValid;
     }
 
     private void OnContinuePressed()
     {
-        SaveStudentData(studentName);
+        ValidateInput(inputFieldName != null ? inputFieldName.text : studentName);
+        if (studentName.Length < MinNameLength || studentName.Length > MaxNameLength)
+            return;
+
+        if (continueButton != null) continueButton.interactable = false;
+        StartCoroutine(RegisterStudentAndContinue());
     }
 
-    private void SaveStudentData(string name)
+    private IEnumerator RegisterStudentAndContinue()
     {
-        string folderPath = GetFolderPath();
+        string baseUrl = PlayerPrefs.GetString("SerenaServerUrl", serverBaseUrl).TrimEnd('/');
+        var payload = new JoinStudentRequest { name = studentName };
+        byte[] body = Encoding.UTF8.GetBytes(JsonUtility.ToJson(payload));
+        using var request = new UnityWebRequest($"{baseUrl}/api/sessions/{StudentSessionContext.SessionId}/students", "POST");
+        request.uploadHandler = new UploadHandlerRaw(body);
+        request.downloadHandler = new DownloadHandlerBuffer();
+        request.SetRequestHeader("Content-Type", "application/json");
+        request.timeout = 8;
+        yield return request.SendWebRequest();
 
-        if (string.IsNullOrEmpty(folderPath))
+        if (request.result != UnityWebRequest.Result.Success)
         {
-            Debug.LogError("Error: No has asignado ninguna carpeta en el Inspector.");
-            return;
+            ShowConnectionMessage(request.responseCode == 404
+                ? "La sesión expiró. Ingresa nuevamente el código."
+                : "No se pudo conectar con Serena. Revisa la red y vuelve a intentar.");
+            if (continueButton != null) continueButton.interactable = true;
+            yield break;
         }
 
-        StudentData data = new StudentData();
-        data.studentName = name;
-
-        string json = JsonUtility.ToJson(data, true);
-        string fullFilePath = Path.Combine(folderPath, "student_data.json");
-
-        // Crea el directorio si no existe físicamente
-        if (!Directory.Exists(folderPath))
+        var response = JsonUtility.FromJson<JoinStudentResponse>(request.downloadHandler.text);
+        if (response == null || string.IsNullOrWhiteSpace(response.studentId))
         {
-            Directory.CreateDirectory(folderPath);
+            ShowConnectionMessage("El servidor respondió con un dato inválido. Intenta nuevamente.");
+            if (continueButton != null) continueButton.interactable = true;
+            yield break;
         }
 
-        File.WriteAllText(fullFilePath, json);
-        Debug.Log("<color=green>¡JSON guardado con éxito en!</color>: " + fullFilePath);
+        ContinueToActivity(response.studentId);
+    }
 
-#if UNITY_EDITOR
-        // Forzar a Unity a actualizar la ventana Project para que el JSON aparezca al instante
-        AssetDatabase.Refresh();
-#endif
+    private void ContinueToActivity(string studentId)
+    {
+        StudentSessionContext.SetStudent(studentName, studentId);
+        SaveStudentData(studentName, studentId, StudentSessionContext.SessionId);
 
-        // Transición de paneles
         if (currentPanel != null) currentPanel.SetActive(false);
         if (nextPanel != null) nextPanel.SetActive(true);
     }
 
-    /// <summary>
-    /// Obtiene la ruta física del sistema basada en la carpeta arrastrada en el Inspector
-    /// </summary>
-    private string GetFolderPath()
+    private void ShowConnectionMessage(string message)
     {
-#if UNITY_EDITOR
-        if (targetFolder != null)
-        {
-            // Obtiene la ruta relativa dentro de Assets (ej. "Assets/MisDatos")
-            string relativePath = AssetDatabase.GetAssetPath(targetFolder);
+        if (inputFieldName != null && inputFieldName.placeholder is TMP_Text placeholder)
+            placeholder.text = message;
+        else
+            Debug.LogWarning(message);
+    }
 
-            // Verifica si lo que se asignó es efectivamente una carpeta
-            if (Directory.Exists(relativePath))
-            {
-                // Convierte la ruta relativa a una ruta absoluta completa de tu disco duro
-                return Path.GetFullPath(relativePath);
-            }
-            else
-            {
-                Debug.LogWarning("El objeto asignado en 'Target Folder' no es una carpeta.");
-            }
+    private static void SaveStudentData(string name, string studentId, string sessionId)
+    {
+        string folderPath = Application.persistentDataPath;
+        string fullFilePath = Path.Combine(folderPath, "student_data.json");
+        var data = new StudentData
+        {
+            studentName = name,
+            studentId = studentId,
+            sessionId = sessionId
+        };
+
+        try
+        {
+            Directory.CreateDirectory(folderPath);
+            File.WriteAllText(fullFilePath, JsonUtility.ToJson(data, true));
+            Debug.Log("Datos de la sesión del estudiante guardados localmente.");
         }
-#endif
-        // Ruta por defecto en caso de no asignar nada en el Inspector o ejecutar fuera del editor
-        return Application.dataPath;
+        catch (Exception exception)
+        {
+            Debug.LogError("No se pudieron guardar los datos del estudiante: " + exception.Message);
+        }
     }
 }
 
-[System.Serializable]
+[Serializable]
+public class JoinStudentRequest
+{
+    public string name;
+}
+
+[Serializable]
+public class JoinStudentResponse
+{
+    public string studentId;
+    public string sessionCode;
+    public bool joined;
+}
+
+[Serializable]
 public class StudentData
 {
     public string studentName;
+    public string studentId;
+    public string sessionId;
 }
