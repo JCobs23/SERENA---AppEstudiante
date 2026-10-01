@@ -25,11 +25,13 @@ CrashReports/
 .idea/
 .vscode/
 *.sln
+*.dll
 *.csproj
 *.unityproj
 *.suo
 *.tmp
 *.user
+*.slnx
 *.userprefs
 *.pidb
 *.booproj
