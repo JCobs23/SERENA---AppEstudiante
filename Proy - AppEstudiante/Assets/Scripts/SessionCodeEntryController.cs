@@ -110,7 +110,7 @@ public class SessionCodeEntryController : MonoBehaviour
         }
 
         StudentSessionContext.SetSessionId(code);
-        SceneManager.LoadScene("SampleScene");
+        SceneManager.LoadScene("2_SampleScene");
     }
 
     private static bool IsNumeric(string value)
