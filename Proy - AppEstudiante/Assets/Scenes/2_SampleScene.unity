@@ -775,7 +775,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::NarrativeStartListener
   serverBaseUrl: http://127.0.0.1:5080
   narrativeSceneName: 3_Narrativa
-  checkSeconds: 1
+  checkSeconds: 0.5
 --- !u!1 &185251385
 GameObject:
   m_ObjectHideFlags: 0

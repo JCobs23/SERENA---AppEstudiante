@@ -17,16 +17,35 @@ public static class StudentSessionContext
     public static string StudentName { get; private set; }
     public static string StudentId { get; private set; }
     public static string SessionId { get; private set; }
+    public static bool NarrativeStarted { get; private set; }
+    public static bool NarrativeIntroCompleted { get; private set; }
+    public static int CurrentNarrativeStage { get; private set; }
+    public static string CurrentNarrativeStageLabel { get; private set; }
+    public static string CurrentNarrativeStageDescription { get; private set; }
 
     public static void SetSessionId(string sessionId)
     {
         SessionId = string.IsNullOrWhiteSpace(sessionId) ? null : sessionId.Trim();
+        NarrativeStarted = false;
+        NarrativeIntroCompleted = false;
+        CurrentNarrativeStage = 0;
     }
 
     public static void SetStudent(string name, string studentId)
     {
         StudentName = name;
         StudentId = studentId;
+    }
+    public static void SetNarrativeState(bool started, int stage, string label, string description)
+    {
+        NarrativeStarted = started;
+        CurrentNarrativeStage = stage;
+        CurrentNarrativeStageLabel = label;
+        CurrentNarrativeStageDescription = description;
+    }
+    public static void SetNarrativeIntroCompleted(bool completed)
+    {
+        NarrativeIntroCompleted = completed;
     }
 }
 
@@ -97,7 +116,17 @@ public class StudentNameController : MonoBehaviour
     private IEnumerator RegisterStudentAndContinue()
     {
         string baseUrl = PlayerPrefs.GetString("SerenaServerUrl", serverBaseUrl).TrimEnd('/');
-        var payload = new JoinStudentRequest { name = studentName };
+        string sessionId = StudentSessionContext.SessionId;
+        string identityKey = studentName.Trim().ToLowerInvariant();
+        string storageKey = "Serena.StudentId." + sessionId + "." + identityKey;
+        string savedStudentId = PlayerPrefs.GetString(storageKey, string.Empty);
+        if (string.IsNullOrWhiteSpace(savedStudentId))
+        {
+            savedStudentId = Guid.NewGuid().ToString("N");
+            PlayerPrefs.SetString(storageKey, savedStudentId);
+            PlayerPrefs.Save();
+        }
+        var payload = new JoinStudentRequest { name = studentName, studentId = savedStudentId };
         byte[] body = Encoding.UTF8.GetBytes(JsonUtility.ToJson(payload));
         using var request = new UnityWebRequest($"{baseUrl}/api/sessions/{StudentSessionContext.SessionId}/students", "POST");
         request.uploadHandler = new UploadHandlerRaw(body);
@@ -123,7 +152,24 @@ public class StudentNameController : MonoBehaviour
             yield break;
         }
 
+        PlayerPrefs.SetString(storageKey, response.studentId);
+        PlayerPrefs.Save();
         ContinueToActivity(response.studentId);
+        StudentHeartbeatRunner.Run(HeartbeatLoop(sessionId, response.studentId));
+    }
+
+    private IEnumerator HeartbeatLoop(string sessionId, string studentId)
+    {
+        string baseUrl = PlayerPrefs.GetString("SerenaServerUrl", serverBaseUrl).TrimEnd('/');
+        while (StudentSessionContext.SessionId == sessionId && StudentSessionContext.StudentId == studentId)
+        {
+            yield return new WaitForSecondsRealtime(5f);
+            using var request = new UnityWebRequest(baseUrl + "/api/sessions/" + sessionId + "/students/" + studentId + "/heartbeat", "POST");
+            request.downloadHandler = new DownloadHandlerBuffer();
+            request.timeout = 5;
+            yield return request.SendWebRequest();
+            if (request.responseCode == 404) yield break;
+        }
     }
 
     private void ContinueToActivity(string studentId)
@@ -178,6 +224,7 @@ public class StudentNameController : MonoBehaviour
 public class JoinStudentRequest
 {
     public string name;
+    public string studentId;
 }
 
 [Serializable]
@@ -194,4 +241,27 @@ public class StudentData
     public string studentName;
     public string studentId;
     public string sessionId;
+}
+
+public sealed class StudentHeartbeatRunner : MonoBehaviour
+{
+    private static StudentHeartbeatRunner instance;
+
+    public static void Run(IEnumerator routine)
+    {
+        if (instance == null)
+        {
+            var host = new GameObject(nameof(StudentHeartbeatRunner));
+            instance = host.AddComponent<StudentHeartbeatRunner>();
+            DontDestroyOnLoad(host);
+        }
+
+        instance.StartCoroutine(routine);
+    }
+
+    private void OnDestroy()
+    {
+        if (instance == this)
+            instance = null;
+    }
 }

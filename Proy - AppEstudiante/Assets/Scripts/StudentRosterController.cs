@@ -67,7 +67,10 @@ public sealed class StudentRosterController : MonoBehaviour
             yield break;
 
         string baseUrl = PlayerPrefs.GetString("SerenaServerUrl", serverBaseUrl).TrimEnd('/');
-        string url = $"{baseUrl}/api/sessions/{sessionCode}/students/roster";
+        string studentId = StudentSessionContext.StudentId;
+        if (string.IsNullOrWhiteSpace(studentId))
+            yield break;
+        string url = $"{baseUrl}/api/sessions/{sessionCode}/students/roster?studentId={UnityWebRequest.EscapeURL(studentId)}";
 
         using var request = UnityWebRequest.Get(url);
         request.timeout = 5;
