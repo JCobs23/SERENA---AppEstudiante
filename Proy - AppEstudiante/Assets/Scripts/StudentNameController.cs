@@ -6,6 +6,7 @@ using TMPro;
 using UnityEngine;
 using UnityEngine.Networking;
 using UnityEngine.UI;
+using UnityEngine.SceneManagement;
 
 /// <summary>
 /// Holds the student identity for the current app session. The session code can
@@ -42,6 +43,7 @@ public class StudentNameController : MonoBehaviour
     [Header("Panel Navigation")]
     [SerializeField] private GameObject currentPanel;
     [SerializeField] private GameObject nextPanel;
+    [SerializeField] private string sceneToLoad = "";
 
     private string studentName = string.Empty;
     private string originalPlaceholder;
@@ -128,6 +130,13 @@ public class StudentNameController : MonoBehaviour
     {
         StudentSessionContext.SetStudent(studentName, studentId);
         SaveStudentData(studentName, studentId, StudentSessionContext.SessionId);
+
+        // Si se ha configurado una escena, cargarla. Si no, usar la navegación por paneles existente.
+        if (!string.IsNullOrWhiteSpace(sceneToLoad))
+        {
+            SceneManager.LoadScene(sceneToLoad);
+            return;
+        }
 
         if (currentPanel != null) currentPanel.SetActive(false);
         if (nextPanel != null) nextPanel.SetActive(true);
