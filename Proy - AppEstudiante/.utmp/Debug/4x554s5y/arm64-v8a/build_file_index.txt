@@ -1,0 +1,3 @@
+D:\Chavi\UAO\SEMESTRE_8\Diseno2\SERENA---AppEstudiante\Proy - AppEstudiante\Library\Bee\Android\Prj\IL2CPP\Gradle\unityLibrary\src\main\cpp\CMakeLists.txt
+D:\Chavi\UAO\SEMESTRE_8\Diseno2\SERENA---AppEstudiante\Proy - AppEstudiante\Library\Bee\Android\Prj\IL2CPP\Gradle\unityLibrary\src\main\cpp\FramePacing\CMakeLists.txt
+D:\Chavi\UAO\SEMESTRE_8\Diseno2\SERENA---AppEstudiante\Proy - AppEstudiante\Library\Bee\Android\Prj\IL2CPP\Gradle\unityLibrary\src\main\cpp\GameActivity\CMakeLists.txt

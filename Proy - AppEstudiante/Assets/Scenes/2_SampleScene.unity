@@ -773,7 +773,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: ad654271ea2c4784fac1e3262c375bd4, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::NarrativeStartListener
-  serverBaseUrl: http://127.0.0.1:5080
+  serverBaseUrl: http://192.168.80.30:5080
   narrativeSceneName: 3_Narrativa
   checkSeconds: 0.5
 --- !u!1 &185251385
@@ -1685,7 +1685,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 899f071cc567e33449a425d47c6e2186, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::StudentReadyButtonController
-  serverBaseUrl: http://127.0.0.1:5080
+  serverBaseUrl: http://192.168.80.30:5080
   heartbeatSeconds: 3
 --- !u!114 &610350702
 MonoBehaviour:
@@ -1815,7 +1815,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::StudentNameController
   inputFieldName: {fileID: 444615055}
   continueButton: {fileID: 1544150763}
-  serverBaseUrl: http://127.0.0.1:5080
+  serverBaseUrl: http://192.168.80.30:5080
   currentPanel: {fileID: 160927261}
   nextPanel: {fileID: 1903418360}
   sceneToLoad: 
@@ -2358,7 +2358,7 @@ MonoBehaviour:
   notReadyTexture: {fileID: 10912, guid: 0000000000000000f000000000000000, type: 0}
   readyColor: {r: 0.05, g: 0.75, b: 0.48, a: 1}
   notReadyColor: {r: 0.85, g: 0.1, b: 0.15, a: 1}
-  serverBaseUrl: http://127.0.0.1:5080
+  serverBaseUrl: http://192.168.80.30:5080
   refreshSeconds: 1
 --- !u!1 &1008569484
 GameObject:
