@@ -333,8 +333,8 @@ private IEnumerator ReportIntroductionCompleted()
             return;
         }
 
-        // La vista de la Etapa 1 pertenece a la escena 3_Narrativa.
-        if (currentStage == 1)
+        // La vista de las etapas 1 y 2 pertenece a la escena 3_Narrativa.
+        if (currentStage == 1 || currentStage == 2)
             return;
 
         GUI.depth = -100;
