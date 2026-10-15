@@ -15,14 +15,21 @@ public class NarrativeStartListener : MonoBehaviour
         public int stage;
         public string stageLabel;
         public string stageDescription;
+        public bool mediaPaused;
+        public double mediaPositionSeconds;
+        public int mediaRevision;
+        public string mediaCommand;
     }
 
     [SerializeField] private string serverBaseUrl = "http://127.0.0.1:5080";
+    [SerializeField] private string codeEntrySceneName = "1_IngresoCodigo";
     [SerializeField] private string narrativeSceneName = "3_Narrativa";
     [SerializeField] private float checkSeconds = 0.5f;
 
     private bool sceneLoaded;
+    private int narrativeGeneration;
     private bool introStarted;
+
     private bool introVisible;
     private string introError;
     private VideoPlayer videoPlayer;
@@ -41,7 +48,7 @@ public class NarrativeStartListener : MonoBehaviour
         StartCoroutine(HeartbeatLoop());
     }
 
-    private IEnumerator SynchronizeNarrative()
+private IEnumerator SynchronizeNarrative()
     {
         while (true)
         {
@@ -58,6 +65,24 @@ public class NarrativeStartListener : MonoBehaviour
                     SessionStatus status = JsonUtility.FromJson<SessionStatus>(request.downloadHandler.text);
                     if (status != null)
                     {
+                        if (StudentSessionContext.NarrativeStarted && !status.narrativeStarted)
+                        {
+                            StopIntroduction();
+                            sceneLoaded = false;
+                            introStarted = false;
+                            StudentSessionContext.ClearSession();
+                            SceneManager.LoadScene(codeEntrySceneName);
+                            continue;
+                        }
+
+                        if (status.narrativeStarted && status.stage >= 1
+                            && !StudentSessionContext.NarrativeIntroCompleted)
+                        {
+                            StopIntroduction();
+                            introStarted = true;
+                            StudentSessionContext.SetNarrativeIntroCompleted(true);
+                        }
+
                         StudentSessionContext.SetNarrativeState(
                             status.narrativeStarted,
                             status.stage,
@@ -71,10 +96,24 @@ public class NarrativeStartListener : MonoBehaviour
                             SceneManager.LoadScene(narrativeSceneName);
                         }
 
-                        if (status.narrativeStarted && !introStarted)
+                        if (status.narrativeStarted && status.stage == 0 && !introStarted)
                         {
                             introStarted = true;
                             StartCoroutine(PlayIntroduction());
+                        }
+
+                        NarrativeStageView stageView = FindAnyObjectByType<NarrativeStageView>();
+                        if (stageView != null && status.narrativeStarted)
+                        {
+                            stageView.SetNarrativeState(
+                                status.stage,
+                                status.stageLabel ?? string.Empty,
+                                status.stageDescription ?? string.Empty,
+                                status.mediaPaused,
+                                status.mediaPositionSeconds,
+                                status.mediaRevision,
+                                status.mediaCommand ?? string.Empty
+                            );
                         }
                     }
                 }
@@ -103,8 +142,9 @@ public class NarrativeStartListener : MonoBehaviour
             yield return new WaitForSecondsRealtime(3f);
         }
     }
-    private IEnumerator PlayIntroduction()
+private IEnumerator PlayIntroduction()
     {
+        int generation = narrativeGeneration;
         introVisible = true;
         introError = null;
         string sourcePath = Path.Combine(Application.streamingAssetsPath, "SerenaIntro.mp4");
@@ -114,6 +154,8 @@ public class NarrativeStartListener : MonoBehaviour
         {
             request.timeout = 30;
             yield return request.SendWebRequest();
+            if (generation != narrativeGeneration || !StudentSessionContext.NarrativeStarted)
+                yield break;
             if (request.result == UnityWebRequest.Result.Success)
                 videoBytes = request.downloadHandler.data;
         }
@@ -131,9 +173,13 @@ public class NarrativeStartListener : MonoBehaviour
         }
         catch (Exception)
         {
-            ShowIntroError("No se pudo preparar el video en este dispositivo.");
+            if (generation == narrativeGeneration)
+                ShowIntroError("No se pudo preparar el video en este dispositivo.");
             yield break;
         }
+
+        if (generation != narrativeGeneration || !StudentSessionContext.NarrativeStarted)
+            yield break;
 
         videoTexture = new RenderTexture(Mathf.Max(640, Screen.width), Mathf.Max(360, Screen.height), 0, RenderTextureFormat.ARGB32);
         videoTexture.Create();
@@ -155,11 +201,18 @@ public class NarrativeStartListener : MonoBehaviour
         videoPlayer.Prepare();
 
         float waitSeconds = 0f;
-        while (!videoPlayer.isPrepared && string.IsNullOrEmpty(introError) && waitSeconds < 30f)
+        while (generation == narrativeGeneration
+            && StudentSessionContext.NarrativeStarted
+            && !videoPlayer.isPrepared
+            && string.IsNullOrEmpty(introError)
+            && waitSeconds < 30f)
         {
             waitSeconds += Time.unscaledDeltaTime;
             yield return null;
         }
+
+        if (generation != narrativeGeneration || !StudentSessionContext.NarrativeStarted)
+            yield break;
 
         if (!videoPlayer.isPrepared)
         {
@@ -189,7 +242,7 @@ public class NarrativeStartListener : MonoBehaviour
 
     private void FinishIntroduction()
     {
-        if (StudentSessionContext.NarrativeIntroCompleted)
+        if (!StudentSessionContext.NarrativeStarted || StudentSessionContext.NarrativeIntroCompleted)
             return;
 
         introVisible = false;
@@ -197,9 +250,38 @@ public class NarrativeStartListener : MonoBehaviour
         StartCoroutine(ReportIntroductionCompleted());
     }
 
-    private IEnumerator ReportIntroductionCompleted()
+    private void StopIntroduction()
     {
-        while (true)
+        StopVideoPlayback();
+        StudentSessionContext.SetNarrativeIntroCompleted(false);
+    }
+
+    private void StopVideoPlayback()
+    {
+        narrativeGeneration++;
+        introVisible = false;
+        introError = null;
+        if (videoPlayer != null)
+        {
+            videoPlayer.errorReceived -= HandleVideoError;
+            videoPlayer.loopPointReached -= HandleVideoEnded;
+            videoPlayer.Stop();
+            Destroy(videoPlayer);
+            videoPlayer = null;
+        }
+        if (videoTexture != null)
+        {
+            videoTexture.Release();
+            Destroy(videoTexture);
+            videoTexture = null;
+        }
+    }
+
+private IEnumerator ReportIntroductionCompleted()
+    {
+        while (StudentSessionContext.NarrativeStarted
+            && !string.IsNullOrWhiteSpace(StudentSessionContext.SessionId)
+            && !string.IsNullOrWhiteSpace(StudentSessionContext.StudentId))
         {
             string baseUrl = PlayerPrefs.GetString("SerenaServerUrl", serverBaseUrl).TrimEnd('/');
             string url = baseUrl + "/api/sessions/" + StudentSessionContext.SessionId
@@ -219,7 +301,10 @@ public class NarrativeStartListener : MonoBehaviour
         if (!StudentSessionContext.NarrativeStarted)
             return;
 
-        if (!StudentSessionContext.NarrativeIntroCompleted || StudentSessionContext.CurrentNarrativeStage == 0)
+        EnsureStyles();
+        int currentStage = StudentSessionContext.CurrentNarrativeStage;
+
+        if (!StudentSessionContext.NarrativeIntroCompleted || currentStage == 0)
         {
             GUI.depth = -100;
             GUI.color = Color.black;
@@ -229,10 +314,8 @@ public class NarrativeStartListener : MonoBehaviour
             if (introVisible && videoTexture != null && videoPlayer != null && videoPlayer.isPlaying)
                 GUI.DrawTexture(new Rect(0, 0, Screen.width, Screen.height), videoTexture, ScaleMode.ScaleToFit);
 
-            EnsureStyles();
             if (StudentSessionContext.NarrativeIntroCompleted)
             {
-                EnsureStyles();
                 GUI.Label(new Rect(24, Screen.height * 0.45f, Screen.width - 48, 60), "Introducción terminada. Esperando al grupo…", introTextStyle);
                 return;
             }
@@ -250,17 +333,22 @@ public class NarrativeStartListener : MonoBehaviour
             return;
         }
 
-        EnsureStyles();
-        float width = Mathf.Min(Screen.width - 32, 1100);
-        float x = (Screen.width - width) / 2f;
-        Rect banner = new Rect(x, 20, width, 116);
-        GUI.Box(banner, GUIContent.none, bannerStyle);
-        GUI.Label(new Rect(x + 24, 32, width - 48, 34),
-            "ETAPA " + StudentSessionContext.CurrentNarrativeStage + " · " + StudentSessionContext.CurrentNarrativeStageLabel,
-            titleStyle);
-        GUI.Label(new Rect(x + 24, 70, width - 48, 52),
-            StudentSessionContext.CurrentNarrativeStageDescription,
-            descriptionStyle);
+        // La vista de la Etapa 1 pertenece a la escena 3_Narrativa.
+        if (currentStage == 1)
+            return;
+
+        GUI.depth = -100;
+        GUI.color = Color.black;
+        GUI.DrawTexture(new Rect(0, 0, Screen.width, Screen.height), Texture2D.blackTexture);
+        GUI.color = Color.white;
+
+        float stageWidth = Mathf.Min(Screen.width - 32, 1100);
+        float stageX = (Screen.width - stageWidth) / 2f;
+        GUI.Box(new Rect(stageX, 20, stageWidth, 154), GUIContent.none, bannerStyle);
+        GUI.Label(new Rect(stageX + 24, 34, stageWidth - 48, 48),
+            "ETAPA " + currentStage + " · " + StudentSessionContext.CurrentNarrativeStageLabel, titleStyle);
+        GUI.Label(new Rect(stageX + 24, 84, stageWidth - 48, 78),
+            StudentSessionContext.CurrentNarrativeStageDescription, descriptionStyle);
     }
 
     private void EnsureStyles()
@@ -279,6 +367,7 @@ public class NarrativeStartListener : MonoBehaviour
         titleStyle = new GUIStyle(GUI.skin.label);
         titleStyle.fontSize = Mathf.Clamp(Screen.width / 42, 20, 36);
         titleStyle.fontStyle = FontStyle.Bold;
+        titleStyle.wordWrap = true;
         titleStyle.normal.textColor = Color.white;
 
         descriptionStyle = new GUIStyle(GUI.skin.label);
