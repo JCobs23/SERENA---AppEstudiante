@@ -31,6 +31,18 @@ public static class StudentSessionContext
         CurrentNarrativeStage = 0;
     }
 
+    public static void ClearSession()
+    {
+        SessionId = null;
+        StudentId = null;
+        NarrativeStarted = false;
+        NarrativeIntroCompleted = false;
+        CurrentNarrativeStage = 0;
+        CurrentNarrativeStageLabel = string.Empty;
+        CurrentNarrativeStageDescription = string.Empty;
+    }
+
+
     public static void SetStudent(string name, string studentId)
     {
         StudentName = name;
