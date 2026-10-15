@@ -1,0 +1,3 @@
+D:\Materias\2026-02\DM2\Proyecto\SERENA---AppEstudiante\Proy - AppEstudiante\Library\Bee\Android\Prj\IL2CPP\Gradle\unityLibrary\src\main\cpp\CMakeLists.txt
+D:\Materias\2026-02\DM2\Proyecto\SERENA---AppEstudiante\Proy - AppEstudiante\Library\Bee\Android\Prj\IL2CPP\Gradle\unityLibrary\src\main\cpp\FramePacing\CMakeLists.txt
+D:\Materias\2026-02\DM2\Proyecto\SERENA---AppEstudiante\Proy - AppEstudiante\Library\Bee\Android\Prj\IL2CPP\Gradle\unityLibrary\src\main\cpp\GameActivity\CMakeLists.txt
