@@ -8,6 +8,18 @@ using UnityEngine.Video;
 public class NarrativeStageView : MonoBehaviour
 {
     [SerializeField] private string videoFileName = "SerenaNarrativa.mp4";
+    [SerializeField] private string serverBaseUrl = "http://192.168.1.18:5080";
+
+    private static readonly string[] EmotionValues =
+        { "Curioso", "Miedo a la exclusión", "Neutral", "Confundido", "Incómodo" };
+    private static readonly string[] DecisionValues =
+        { "Dialogar directamente", "Evitar involucrarse", "Difundir el rumor", "Cambiar el tema" };
+
+    [Serializable]
+    private class InteractionRequest
+    {
+        public string value;
+    }
 
     private int currentStage;
     private string stageLabel = string.Empty;
@@ -37,11 +49,16 @@ public class NarrativeStageView : MonoBehaviour
     private GUIStyle emotionSelectedStyle;
     private GUIStyle emotionCardStyle;
     private GUIStyle emotionSelectedCardStyle;
+    private GUIStyle decisionCardStyle;
+    private GUIStyle decisionSelectedCardStyle;
     private Texture2D bannerTexture;
     private Texture2D emotionCardTexture;
     private Texture2D emotionSelectedCardTexture;
     private readonly Texture2D[] emotionImages = new Texture2D[5];
     private int selectedEmotionIndex = -1;
+    private int selectedDecisionIndex = -1;
+    private bool isSubmittingInteraction;
+    private string interactionMessage;
 
     public void SetNarrativeState(
         int stage,
@@ -63,7 +80,15 @@ public class NarrativeStageView : MonoBehaviour
         mediaCommand = command ?? string.Empty;
 
         if (stage == 2 && previousStage != 2)
+        {
             selectedEmotionIndex = -1;
+            interactionMessage = string.Empty;
+        }
+        if (stage == 3 && previousStage != 3)
+        {
+            selectedDecisionIndex = -1;
+            interactionMessage = string.Empty;
+        }
 
         if (previousStage == 2 && stage != 2 && blurredEndFrame != null)
         {
@@ -380,10 +405,13 @@ public class NarrativeStageView : MonoBehaviour
 
     private void OnGUI()
     {
-        if (currentStage == 2)
+        if (currentStage == 2 || currentStage == 3)
         {
             EnsureStyles();
-            DrawEmotionSelection();
+            if (currentStage == 2)
+                DrawEmotionSelection();
+            else
+                DrawDecisionSelection();
             return;
         }
 
@@ -460,8 +488,13 @@ public class NarrativeStageView : MonoBehaviour
             float y = top + row * (cardHeight + gapY);
             Rect card = new Rect(x, y, cardWidth, cardHeight);
             bool selected = selectedEmotionIndex == i;
+            GUI.enabled = !isSubmittingInteraction;
             if (GUI.Button(card, GUIContent.none, selected ? emotionSelectedCardStyle : emotionCardStyle))
+            {
                 selectedEmotionIndex = i;
+                StartCoroutine(SubmitInteraction("emotion", EmotionValues[i]));
+            }
+            GUI.enabled = true;
 
             if (emotionImages[i] != null)
             {
@@ -478,6 +511,92 @@ public class NarrativeStageView : MonoBehaviour
             if (selected)
                 GUI.Label(new Rect(x + 12, y + cardHeight * 0.86f, cardWidth - 24, cardHeight * 0.1f), "Seleccionada", emotionSelectedStyle);
         }
+
+        DrawInteractionStatus();
+    }
+
+    private void DrawDecisionSelection()
+    {
+        GUI.depth = -100;
+        GUI.color = Color.black;
+        GUI.DrawTexture(new Rect(0, 0, Screen.width, Screen.height), Texture2D.blackTexture);
+        GUI.color = Color.white;
+        if (blurredEndFrame != null)
+            GUI.DrawTexture(new Rect(0, 0, Screen.width, Screen.height), blurredEndFrame, ScaleMode.ScaleToFit);
+        GUI.color = new Color(0, 0, 0, 0.55f);
+        GUI.DrawTexture(new Rect(0, 0, Screen.width, Screen.height), Texture2D.whiteTexture);
+        GUI.color = Color.white;
+
+        float headerY = Screen.height * 0.08f;
+        GUI.Label(new Rect(20, headerY, Screen.width - 40, Screen.height * 0.09f),
+            "¿Qué decisión tomarías?", emotionHeaderStyle);
+        GUI.Label(new Rect(24, headerY + Screen.height * 0.09f, Screen.width - 48, Screen.height * 0.07f),
+            "Elige cómo responder a esta situación", emotionSubheaderStyle);
+
+        float gapX = Screen.width * 0.035f;
+        float gapY = Screen.height * 0.025f;
+        float cardWidth = Mathf.Min((Screen.width - gapX - 36f) / 2f, 560f);
+        float cardHeight = Mathf.Min(Screen.height * 0.22f, 260f);
+        float left = (Screen.width - (cardWidth * 2 + gapX)) / 2f;
+        float top = Screen.height * 0.32f;
+
+        for (int i = 0; i < DecisionValues.Length; i++)
+        {
+            float x = left + (i % 2) * (cardWidth + gapX);
+            float y = top + (i / 2) * (cardHeight + gapY);
+            Rect card = new Rect(x, y, cardWidth, cardHeight);
+            GUI.enabled = !isSubmittingInteraction;
+            if (GUI.Button(card, DecisionValues[i],
+                    selectedDecisionIndex == i ? decisionSelectedCardStyle : decisionCardStyle))
+            {
+                selectedDecisionIndex = i;
+                StartCoroutine(SubmitInteraction("decision", DecisionValues[i]));
+            }
+            GUI.enabled = true;
+        }
+
+        DrawInteractionStatus();
+    }
+
+    private void DrawInteractionStatus()
+    {
+        if (string.IsNullOrEmpty(interactionMessage))
+            return;
+
+        GUI.Label(new Rect(24, Screen.height * 0.91f, Screen.width - 48, Screen.height * 0.06f),
+            interactionMessage, statusStyle);
+    }
+
+    private IEnumerator SubmitInteraction(string kind, string value)
+    {
+        if (isSubmittingInteraction || string.IsNullOrWhiteSpace(StudentSessionContext.SessionId)
+            || string.IsNullOrWhiteSpace(StudentSessionContext.StudentId))
+        {
+            interactionMessage = "No se pudo identificar tu sesión. Vuelve a conectarte.";
+            yield break;
+        }
+
+        isSubmittingInteraction = true;
+        interactionMessage = "Enviando respuesta…";
+        string baseUrl = PlayerPrefs.GetString("SerenaServerUrl", serverBaseUrl).TrimEnd('/');
+        string url = baseUrl + "/api/sessions/" + StudentSessionContext.SessionId
+            + "/students/" + StudentSessionContext.StudentId + "/" + kind;
+        string json = JsonUtility.ToJson(new InteractionRequest { value = value });
+        using var request = new UnityWebRequest(url, "POST");
+        request.uploadHandler = new UploadHandlerRaw(System.Text.Encoding.UTF8.GetBytes(json));
+        request.downloadHandler = new DownloadHandlerBuffer();
+        request.SetRequestHeader("Content-Type", "application/json");
+        request.timeout = 8;
+        yield return request.SendWebRequest();
+
+        if (request.result == UnityWebRequest.Result.Success)
+            interactionMessage = "Respuesta enviada correctamente.";
+        else
+        {
+            interactionMessage = "No se pudo enviar. Comprueba la conexión e inténtalo de nuevo.";
+            Debug.LogWarning("Serena: fallo al enviar la respuesta (" + request.responseCode + "): " + request.error);
+        }
+        isSubmittingInteraction = false;
     }
 
     private static void DrawSelectionOutline(Rect card)
@@ -604,6 +723,20 @@ public class NarrativeStageView : MonoBehaviour
         emotionSelectedCardStyle.normal.background = emotionSelectedCardTexture;
         emotionSelectedCardStyle.hover.background = emotionSelectedCardTexture;
         emotionSelectedCardStyle.active.background = emotionSelectedCardTexture;
+
+        decisionCardStyle = new GUIStyle(emotionCardStyle);
+        decisionCardStyle.fontSize = Mathf.Clamp(Screen.width / 34, 22, 38);
+        decisionCardStyle.fontStyle = FontStyle.Bold;
+        decisionCardStyle.alignment = TextAnchor.MiddleCenter;
+        decisionCardStyle.wordWrap = true;
+        decisionCardStyle.normal.textColor = new Color(0.16f, 0.11f, 0.2f);
+        decisionCardStyle.hover.textColor = decisionCardStyle.normal.textColor;
+        decisionCardStyle.active.textColor = decisionCardStyle.normal.textColor;
+
+        decisionSelectedCardStyle = new GUIStyle(decisionCardStyle);
+        decisionSelectedCardStyle.normal.background = emotionSelectedCardTexture;
+        decisionSelectedCardStyle.hover.background = emotionSelectedCardTexture;
+        decisionSelectedCardStyle.active.background = emotionSelectedCardTexture;
     }
 
     private static Texture2D CreateRoundedCardTexture(Color fill, Color border)
