@@ -19,6 +19,12 @@ public class NarrativeStartListener : MonoBehaviour
         public double mediaPositionSeconds;
         public int mediaRevision;
         public string mediaCommand;
+        public bool votingOpen;
+        public int continueVotes;
+        public int alternativeVotes;
+        public string advanceMode;
+        public string finalDecision;
+        public int voteRound;
     }
 
     [SerializeField] private string serverBaseUrl = "http://127.0.0.1:5080";
@@ -87,7 +93,13 @@ private IEnumerator SynchronizeNarrative()
                             status.narrativeStarted,
                             status.stage,
                             status.stageLabel ?? string.Empty,
-                            status.stageDescription ?? string.Empty
+                            status.stageDescription ?? string.Empty,
+                            status.votingOpen,
+                            status.continueVotes,
+                            status.alternativeVotes,
+                            status.advanceMode ?? "automatic",
+                            status.finalDecision ?? string.Empty,
+                            status.voteRound
                         );
 
                         if (status.narrativeStarted && !sceneLoaded)
@@ -112,7 +124,13 @@ private IEnumerator SynchronizeNarrative()
                                 status.mediaPaused,
                                 status.mediaPositionSeconds,
                                 status.mediaRevision,
-                                status.mediaCommand ?? string.Empty
+                                status.mediaCommand ?? string.Empty,
+                                status.votingOpen,
+                                status.continueVotes,
+                                status.alternativeVotes,
+                                status.advanceMode ?? "automatic",
+                                status.finalDecision ?? string.Empty,
+                                status.voteRound
                             );
                         }
                     }
@@ -336,6 +354,8 @@ private IEnumerator ReportIntroductionCompleted()
         // La vista de las etapas con contenido interactivo pertenece a 3_Narrativa.
         if (currentStage == 1 || currentStage == 2 || currentStage == 3)
             return;
+        if (currentStage == 5)
+            return;
 
         GUI.depth = -100;
         GUI.color = Color.black;
@@ -349,6 +369,9 @@ private IEnumerator ReportIntroductionCompleted()
             "ETAPA " + currentStage + " · " + StudentSessionContext.CurrentNarrativeStageLabel, titleStyle);
         GUI.Label(new Rect(stageX + 24, 84, stageWidth - 48, 78),
             StudentSessionContext.CurrentNarrativeStageDescription, descriptionStyle);
+        if (currentStage == 5 && StudentSessionContext.FinalDecision == "continue")
+            GUI.Label(new Rect(stageX + 24, 170, stageWidth - 48, 54),
+                "El docente eligió continuar a la siguiente narrativa.", descriptionStyle);
     }
 
     private void EnsureStyles()

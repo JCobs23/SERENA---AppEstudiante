@@ -22,6 +22,12 @@ public static class StudentSessionContext
     public static int CurrentNarrativeStage { get; private set; }
     public static string CurrentNarrativeStageLabel { get; private set; }
     public static string CurrentNarrativeStageDescription { get; private set; }
+    public static bool VotingOpen { get; private set; }
+    public static int ContinueVotes { get; private set; }
+    public static int AlternativeVotes { get; private set; }
+    public static string AdvanceMode { get; private set; }
+    public static string FinalDecision { get; private set; }
+    public static int VoteRound { get; private set; }
 
     public static void SetSessionId(string sessionId)
     {
@@ -29,6 +35,12 @@ public static class StudentSessionContext
         NarrativeStarted = false;
         NarrativeIntroCompleted = false;
         CurrentNarrativeStage = 0;
+        VotingOpen = false;
+        ContinueVotes = 0;
+        AlternativeVotes = 0;
+        AdvanceMode = "automatic";
+        FinalDecision = string.Empty;
+        VoteRound = 0;
     }
 
     public static void ClearSession()
@@ -40,6 +52,12 @@ public static class StudentSessionContext
         CurrentNarrativeStage = 0;
         CurrentNarrativeStageLabel = string.Empty;
         CurrentNarrativeStageDescription = string.Empty;
+        VotingOpen = false;
+        ContinueVotes = 0;
+        AlternativeVotes = 0;
+        AdvanceMode = "automatic";
+        FinalDecision = string.Empty;
+        VoteRound = 0;
     }
 
 
@@ -48,12 +66,22 @@ public static class StudentSessionContext
         StudentName = name;
         StudentId = studentId;
     }
-    public static void SetNarrativeState(bool started, int stage, string label, string description)
+    public static void SetNarrativeState(bool started, int stage, string label, string description,
+        bool votingOpen, int continueVotes, int alternativeVotes, string advanceMode, string finalDecision, int voteRound)
     {
+        int previousStage = CurrentNarrativeStage;
+        if (started && stage == 3 && previousStage != 3)
+            Handheld.Vibrate();
         NarrativeStarted = started;
         CurrentNarrativeStage = stage;
         CurrentNarrativeStageLabel = label;
         CurrentNarrativeStageDescription = description;
+        VotingOpen = votingOpen;
+        ContinueVotes = continueVotes;
+        AlternativeVotes = alternativeVotes;
+        AdvanceMode = advanceMode;
+        FinalDecision = finalDecision;
+        VoteRound = voteRound;
     }
     public static void SetNarrativeIntroCompleted(bool completed)
     {
