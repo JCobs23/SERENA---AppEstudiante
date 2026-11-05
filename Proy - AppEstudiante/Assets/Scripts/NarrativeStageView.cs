@@ -26,7 +26,16 @@ public class NarrativeStageView : MonoBehaviour
     {
         public string choice;
     }
-    [Serializable]
+    private static readonly string[] DecisionVideoFiles =
+    {
+        "Decision_DialogarDirectamente.mp4",
+        "Decision_EvitarInvolucrarse.mp4",
+        "Decision_DifundirRumor.mp4",
+        "Decision_CambiarTema.mp4"
+    };
+
+    
+[Serializable]
     private class ReflectionRequest
     {
         public string answers;
@@ -164,9 +173,23 @@ public class NarrativeStageView : MonoBehaviour
         if (stage == 1 && !videoStarted)
         {
             videoStarted = true;
-            StartCoroutine(PrepareAndPlayVideo());
+            StartCoroutine(PrepareAndPlayVideo(videoFileName, 1));
         }
-        else if (stage != 1 && videoStarted)
+        else if (stage == 4 && previousStage != 4)
+        {
+            if (selectedDecisionIndex >= 0 && selectedDecisionIndex < DecisionVideoFiles.Length)
+            {
+                videoStarted = true;
+                StartCoroutine(PrepareAndPlayVideo(DecisionVideoFiles[selectedDecisionIndex], 4));
+            }
+            else
+            {
+                videoError = "No se registró una decisión para reproducir su video.";
+                Debug.LogWarning("Serena: la etapa 4 comenzó sin una decisión seleccionada en este dispositivo.");
+            }
+        }
+        
+        else if (stage != 1 && stage != 4 && videoStarted)
         {
             if (stage == 2 && blurredEndFrame == null && videoTexture != null)
                 blurredEndFrame = CreateBlurredSnapshot();
@@ -176,11 +199,12 @@ public class NarrativeStageView : MonoBehaviour
         ApplyMediaState();
     }
 
-    private IEnumerator PrepareAndPlayVideo()
+    private IEnumerator PrepareAndPlayVideo(string selectedVideoFile, int expectedStage)
     {
         int currentGeneration = generation;
+        string activeVideoFileName = string.IsNullOrWhiteSpace(selectedVideoFile) ? videoFileName : selectedVideoFile;
         videoError = null;
-        string sourcePath = Path.Combine(Application.streamingAssetsPath, videoFileName);
+        string sourcePath = Path.Combine(Application.streamingAssetsPath, activeVideoFileName);
         byte[] videoBytes = null;
 
         using (var request = UnityWebRequest.Get(sourcePath))
@@ -188,7 +212,7 @@ public class NarrativeStageView : MonoBehaviour
             request.timeout = 30;
             yield return request.SendWebRequest();
 
-            if (currentGeneration != generation || currentStage != 1)
+            if (currentGeneration != generation || currentStage != expectedStage)
                 yield break;
 
             if (request.result == UnityWebRequest.Result.Success)
@@ -197,12 +221,12 @@ public class NarrativeStageView : MonoBehaviour
 
         if (videoBytes == null || videoBytes.Length == 0)
         {
-            videoError = "No se pudo cargar " + videoFileName + ". Revisa Assets/StreamingAssets.";
-            Debug.LogWarning("Serena: no se pudo cargar el video de la Narrativa inicial.");
+            videoError = "No se pudo cargar " + activeVideoFileName + ". Revisa Assets/StreamingAssets.";
+            Debug.LogWarning("Serena: no se pudo cargar el video " + activeVideoFileName + ".");
             yield break;
         }
 
-        string localVideoPath = Path.Combine(Application.persistentDataPath, videoFileName);
+        string localVideoPath = Path.Combine(Application.persistentDataPath, activeVideoFileName);
         try
         {
             File.WriteAllBytes(localVideoPath, videoBytes);
@@ -214,7 +238,7 @@ public class NarrativeStageView : MonoBehaviour
             yield break;
         }
 
-        if (currentGeneration != generation || currentStage != 1)
+        if (currentGeneration != generation || currentStage != expectedStage)
             yield break;
 
         videoTexture = new RenderTexture(Mathf.Max(640, Screen.width), Mathf.Max(360, Screen.height), 0, RenderTextureFormat.ARGB32);
@@ -238,7 +262,7 @@ public class NarrativeStageView : MonoBehaviour
 
         float waitSeconds = 0f;
         while (currentGeneration == generation
-            && currentStage == 1
+            && currentStage == expectedStage
             && videoPlayer != null
             && !videoPlayer.isPrepared
             && string.IsNullOrEmpty(videoError)
@@ -248,7 +272,7 @@ public class NarrativeStageView : MonoBehaviour
             yield return null;
         }
 
-        if (currentGeneration != generation || currentStage != 1)
+        if (currentGeneration != generation || currentStage != expectedStage)
             yield break;
 
         if (videoPlayer == null || !videoPlayer.isPrepared)
@@ -258,7 +282,10 @@ public class NarrativeStageView : MonoBehaviour
             yield break;
         }
 
-        ApplyMediaState();
+        if (expectedStage == 1)
+            ApplyMediaState();
+        else
+            videoPlayer.Play();
     }
 
     private void ApplyMediaState()
@@ -471,7 +498,15 @@ public class NarrativeStageView : MonoBehaviour
     private void OnGUI()
     {
         EnsureStyles();
-        if (currentStage == 5)
+        if (currentStage == 4)
+        {
+            DrawDecisionConsequenceVideo();
+            DrawTransitionFeedback();
+            return;
+        }
+
+        
+if (currentStage == 5)
         {
             if (votingOpen) DrawVotingPanel();
             else DrawReflectionPanel();
@@ -650,7 +685,34 @@ public class NarrativeStageView : MonoBehaviour
         DrawNarrativeSidebar("Momento de tomar una decisión", 3);
         DrawInteractionStatus();
     }
-    private void DrawNarrativeSidebar(string heading, int activeStep)
+    private void DrawDecisionConsequenceVideo()
+    {
+        GUI.depth = -100;
+        GUI.color = Color.black;
+        GUI.DrawTexture(new Rect(0, 0, Screen.width, Screen.height), Texture2D.blackTexture);
+        GUI.color = Color.white;
+
+        if (videoFinished && blurredEndFrame != null)
+            GUI.DrawTexture(new Rect(0, 0, Screen.width, Screen.height), blurredEndFrame, ScaleMode.ScaleToFit);
+        else if (videoTexture != null && videoPlayer != null)
+            GUI.DrawTexture(new Rect(0, 0, Screen.width, Screen.height), videoTexture, ScaleMode.ScaleToFit);
+
+        float width = Mathf.Min(Screen.width - 40, 1200);
+        float x = (Screen.width - width) / 2f;
+        GUI.Box(new Rect(x, 20, width, 126), GUIContent.none, bannerStyle);
+        GUI.Label(new Rect(x + 24, 34, width - 48, 42), "ETAPA 4 · " + stageLabel, titleStyle);
+        GUI.Label(new Rect(x + 24, 78, width - 48, 54), stageDescription, descriptionStyle);
+
+        if (!string.IsNullOrEmpty(videoError))
+            GUI.Label(new Rect(24, Screen.height * 0.45f, Screen.width - 48, 90), videoError, statusStyle);
+        else if (videoPlayer == null || !videoPlayer.isPrepared)
+            GUI.Label(new Rect(24, Screen.height * 0.45f, Screen.width - 48, 60), "Preparando el video de la decisión…", statusStyle);
+        else if (videoFinished)
+            GUI.Label(new Rect(24, Screen.height * 0.84f, Screen.width - 48, 48), "Video finalizado. Esperando al docente…", statusStyle);
+    }
+
+    
+private void DrawNarrativeSidebar(string heading, int activeStep)
     {
         float width = Mathf.Clamp(Screen.width * 0.23f, 280f, 390f);
         float x = Screen.width - width - 18f;
