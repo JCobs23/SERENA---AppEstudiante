@@ -155,7 +155,7 @@ public class NarrativeStageView : MonoBehaviour
             interactionMessage = string.Empty;
         }
 
-        if (previousStage == 2 && stage != 2 && blurredEndFrame != null)
+        if ((previousStage == 2 || previousStage == 3) && stage != 2 && stage != 3 && blurredEndFrame != null)
         {
             Destroy(blurredEndFrame);
             blurredEndFrame = null;
@@ -614,7 +614,7 @@ public class NarrativeStageView : MonoBehaviour
         GUI.color = Color.white;
         if (blurredEndFrame != null)
             GUI.DrawTexture(new Rect(0, 0, Screen.width, Screen.height), blurredEndFrame, ScaleMode.ScaleToFit);
-        GUI.color = new Color(0, 0, 0, 0.55f);
+        GUI.color = new Color(0, 0, 0, 0.28f);
         GUI.DrawTexture(new Rect(0, 0, Screen.width, Screen.height), Texture2D.whiteTexture);
         GUI.color = Color.white;
 
