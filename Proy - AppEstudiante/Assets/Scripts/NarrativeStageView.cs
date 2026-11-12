@@ -437,7 +437,9 @@ public class NarrativeStageView : MonoBehaviour
             return;
         }
 
-        if (currentStage != 1)
+        // Etapas 1 y 4: el video (narrativa o consecuencia de la decisión) se proyecta
+        // en la pantalla del docente; la tablet solo muestra el fotograma borroso.
+        if (currentStage != 1 && currentStage != 4)
             return;
 
         GUI.depth = -100;
@@ -451,13 +453,17 @@ public class NarrativeStageView : MonoBehaviour
         float width = Mathf.Min(Screen.width - 40, 1200);
         float x = (Screen.width - width) / 2f;
         GUI.Box(new Rect(x, 20, width, 154), GUIContent.none, bannerStyle);
-        GUI.Label(new Rect(x + 24, 34, width - 48, 48), "ETAPA 1 · " + stageLabel, titleStyle);
+        GUI.Label(new Rect(x + 24, 34, width - 48, 48), "ETAPA " + currentStage + " · " + stageLabel, titleStyle);
         GUI.Label(new Rect(x + 24, 84, width - 48, 78), stageDescription, descriptionStyle);
 
         if (!string.IsNullOrEmpty(videoError))
             GUI.Label(new Rect(24, Screen.height * 0.45f, Screen.width - 48, 90), videoError, statusStyle);
         else
-            GUI.Label(new Rect(24, Screen.height * 0.45f, Screen.width - 48, 60), "La narrativa se reproduce en la pantalla del aula.", statusStyle);
+            GUI.Label(new Rect(24, Screen.height * 0.45f, Screen.width - 48, 60),
+                currentStage == 4
+                    ? "Mira en la pantalla del aula lo que ocurre con la decisión del grupo."
+                    : "La narrativa se reproduce en la pantalla del aula.",
+                statusStyle);
         DrawTransitionFeedback();
     }
 
@@ -556,7 +562,7 @@ public class NarrativeStageView : MonoBehaviour
         GUI.color = Color.white;
         if (blurredEndFrame != null)
             GUI.DrawTexture(new Rect(0, 0, Screen.width, Screen.height), blurredEndFrame, ScaleMode.ScaleToFit);
-        GUI.color = new Color(0, 0, 0, 0.55f);
+        GUI.color = new Color(0, 0, 0, 0.28f);
         GUI.DrawTexture(new Rect(0, 0, Screen.width, Screen.height), Texture2D.whiteTexture);
         GUI.color = Color.white;
 
