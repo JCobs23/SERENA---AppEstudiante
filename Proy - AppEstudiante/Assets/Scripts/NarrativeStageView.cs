@@ -863,7 +863,7 @@ private void DrawReflectionWaitScreen()
         GUI.Box(new Rect(x, top, width, Screen.height * 0.68f), GUIContent.none, bannerStyle);
         GUI.Label(new Rect(x + 24, top + 28, width - 48, 70), "Votación final", titleStyle);
         GUI.Label(new Rect(x + 32, top + 102, width - 64, 64),
-            "Vota si te gustaría repetir la experiencia o finalizarla. El docente tomará la decisión final.", descriptionStyle);
+            "Vota si quieres continuar a la siguiente narrativa o explorar una decisión alternativa. El docente tomará la decisión final.", descriptionStyle);
 
         float gap = 22f;
         float buttonWidth = (width - 64 - gap) / 2f;
@@ -872,9 +872,9 @@ private void DrawReflectionWaitScreen()
         Rect continueRect = new Rect(x + 32, buttonY, buttonWidth, buttonHeight);
         Rect alternativeRect = new Rect(continueRect.xMax + gap, buttonY, buttonWidth, buttonHeight);
         GUI.enabled = !voteSubmitted && !isSubmittingVote;
-        if (GUI.Button(continueRect, "REPETIR LA\nEXPERIENCIA", decisionCardStyle))
+        if (GUI.Button(continueRect, "Continuar a la siguiente\nnarrativa", decisionCardStyle))
             StartCoroutine(SubmitVote("continue"));
-        if (GUI.Button(alternativeRect, "FINALIZAR LA\nEXPERIENCIA", decisionCardStyle))
+        if (GUI.Button(alternativeRect, "Explorar una decisión\nalternativa", decisionCardStyle))
             StartCoroutine(SubmitVote("alternative"));
         GUI.enabled = true;
 
@@ -883,7 +883,7 @@ private void DrawReflectionWaitScreen()
             GUI.Label(new Rect(x + 24, buttonY + buttonHeight + 22, width - 48, 46), status, statusStyle);
         if (voteSubmitted)
             GUI.Label(new Rect(x + 24, top + Screen.height * 0.55f, width - 48, 34),
-                "Votos del grupo: " + continueVotes + " repetir · " + alternativeVotes + " finalizar", statusStyle);
+                "Votos del grupo: " + continueVotes + " continuar · " + alternativeVotes + " explorar alternativa", statusStyle);
     }
 
     private IEnumerator SubmitVote(string choice)
