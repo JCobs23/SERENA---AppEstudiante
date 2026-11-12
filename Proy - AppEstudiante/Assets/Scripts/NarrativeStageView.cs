@@ -737,6 +737,11 @@ private void DrawNarrativeSidebar(string heading, int activeStep)
 
     private void DrawReflectionPanel()
     {
+        if (reflectionSubmitted)
+        {
+            DrawReflectionWaitScreen();
+            return;
+        }
         GUI.depth = -100;
         GUI.color = new Color(0.97f, 0.97f, 0.97f, 1f);
         GUI.DrawTexture(new Rect(0, 0, Screen.width, Screen.height), Texture2D.whiteTexture);
@@ -780,6 +785,28 @@ private void DrawNarrativeSidebar(string heading, int activeStep)
             GUI.Label(new Rect(24, Screen.height * 0.9f, Screen.width - 48, 40), reflectionMessage, reflectionSmallStyle);
         if (finalDecision == "continue")
             GUI.Label(new Rect(24, Screen.height * 0.91f, Screen.width - 48, 40), "El docente eligió continuar. Espera la siguiente indicación.", reflectionSmallStyle);
+    }
+
+private void DrawReflectionWaitScreen()
+    {
+        GUI.color = new Color(0.97f, 0.97f, 0.97f, 1f);
+        GUI.DrawTexture(new Rect(0, 0, Screen.width, Screen.height), Texture2D.whiteTexture);
+        GUI.color = Color.white;
+        GUI.Label(new Rect(24, 18, Screen.width - 48, 48), "Serena  ·  Tiempo de reflexión", reflectionTextStyle);
+
+        float width = Mathf.Min(Screen.width - 48, 760f);
+        float height = Mathf.Min(Screen.height * 0.48f, 360f);
+        float x = (Screen.width - width) / 2f;
+        float y = (Screen.height - height) / 2f;
+        GUI.Box(new Rect(x, y, width, height), GUIContent.none, emotionCardStyle);
+        GUI.Label(new Rect(x + 32, y + 36, width - 64, 64), "✓", reflectionTextStyle);
+
+        string title = finalDecision == "continue" ? "El docente eligió continuar" : "Respuestas enviadas";
+        string message = finalDecision == "continue"
+            ? "Mantén tu tablet lista para la siguiente parte de la actividad."
+            : "Tus respuestas quedaron registradas. Espera mientras el docente revisa los resultados y elige qué hará el grupo después.";
+        GUI.Label(new Rect(x + 32, y + 112, width - 64, 58), title, reflectionTextStyle);
+        GUI.Label(new Rect(x + 48, y + 184, width - 96, height - 210), message, reflectionSmallStyle);
     }
 
     private IEnumerator SubmitReflection()
@@ -836,7 +863,7 @@ private void DrawNarrativeSidebar(string heading, int activeStep)
         GUI.Box(new Rect(x, top, width, Screen.height * 0.68f), GUIContent.none, bannerStyle);
         GUI.Label(new Rect(x + 24, top + 28, width - 48, 70), "Votación final", titleStyle);
         GUI.Label(new Rect(x + 32, top + 102, width - 64, 64),
-            "Elige en silencio qué debería hacer el grupo.", descriptionStyle);
+            "Vota si te gustaría repetir la experiencia o finalizarla. El docente tomará la decisión final.", descriptionStyle);
 
         float gap = 22f;
         float buttonWidth = (width - 64 - gap) / 2f;
@@ -845,9 +872,9 @@ private void DrawNarrativeSidebar(string heading, int activeStep)
         Rect continueRect = new Rect(x + 32, buttonY, buttonWidth, buttonHeight);
         Rect alternativeRect = new Rect(continueRect.xMax + gap, buttonY, buttonWidth, buttonHeight);
         GUI.enabled = !voteSubmitted && !isSubmittingVote;
-        if (GUI.Button(continueRect, "CONTINUAR A LA\nSIGUIENTE NARRATIVA", decisionCardStyle))
+        if (GUI.Button(continueRect, "REPETIR LA\nEXPERIENCIA", decisionCardStyle))
             StartCoroutine(SubmitVote("continue"));
-        if (GUI.Button(alternativeRect, "EXPLORAR UNA\nDECISIÓN ALTERNATIVA", decisionCardStyle))
+        if (GUI.Button(alternativeRect, "FINALIZAR LA\nEXPERIENCIA", decisionCardStyle))
             StartCoroutine(SubmitVote("alternative"));
         GUI.enabled = true;
 
@@ -856,7 +883,7 @@ private void DrawNarrativeSidebar(string heading, int activeStep)
             GUI.Label(new Rect(x + 24, buttonY + buttonHeight + 22, width - 48, 46), status, statusStyle);
         if (voteSubmitted)
             GUI.Label(new Rect(x + 24, top + Screen.height * 0.55f, width - 48, 34),
-                "Votos del grupo: " + continueVotes + " continuar · " + alternativeVotes + " explorar otra decisión", statusStyle);
+                "Votos del grupo: " + continueVotes + " repetir · " + alternativeVotes + " finalizar", statusStyle);
     }
 
     private IEnumerator SubmitVote(string choice)
