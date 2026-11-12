@@ -857,20 +857,54 @@ private void DrawReflectionWaitScreen()
         GUI.DrawTexture(new Rect(0, 0, Screen.width, Screen.height), Texture2D.whiteTexture);
         GUI.color = Color.white;
 
-        float width = Mathf.Min(Screen.width - 40, 1050);
-        float x = (Screen.width - width) / 2f;
-        float top = Screen.height * 0.14f;
-        GUI.Box(new Rect(x, top, width, Screen.height * 0.68f), GUIContent.none, bannerStyle);
-        GUI.Label(new Rect(x + 24, top + 28, width - 48, 70), "Votación final", titleStyle);
-        GUI.Label(new Rect(x + 32, top + 102, width - 64, 64),
-            "Vota si quieres continuar a la siguiente narrativa o explorar una decisión alternativa. El docente tomará la decisión final.", descriptionStyle);
+        float screenWidth = Mathf.Max(1f, Screen.width);
+        float screenHeight = Mathf.Max(1f, Screen.height);
+        float smallestDimension = Mathf.Min(screenWidth, screenHeight);
+        float horizontalMargin = Mathf.Clamp(screenWidth * 0.04f, 16f, 36f);
+        float verticalMargin = Mathf.Clamp(screenHeight * 0.04f, 12f, 36f);
+        float panelWidth = Mathf.Min(screenWidth - horizontalMargin * 2f, 1050f);
+        float panelHeight = screenHeight - verticalMargin * 2f;
+        float x = (screenWidth - panelWidth) / 2f;
+        float top = (screenHeight - panelHeight) / 2f;
+        GUI.Box(new Rect(x, top, panelWidth, panelHeight), GUIContent.none, bannerStyle);
 
-        float gap = 22f;
-        float buttonWidth = (width - 64 - gap) / 2f;
-        float buttonY = top + 190;
-        float buttonHeight = Mathf.Clamp(Screen.height * 0.2f, 105f, 190f);
-        Rect continueRect = new Rect(x + 32, buttonY, buttonWidth, buttonHeight);
-        Rect alternativeRect = new Rect(continueRect.xMax + gap, buttonY, buttonWidth, buttonHeight);
+        float paddingX = Mathf.Clamp(panelWidth * 0.035f, 16f, 32f);
+        float paddingY = Mathf.Clamp(smallestDimension * 0.025f, 12f, 24f);
+        float contentWidth = panelWidth - paddingX * 2f;
+        float sectionGap = Mathf.Clamp(smallestDimension * 0.018f, 8f, 16f);
+        float titleHeight = Mathf.Max(36f, titleStyle.CalcHeight(new GUIContent("Votación final"), contentWidth));
+        string description = "Vota si quieres continuar a la siguiente narrativa o explorar una decisión alternativa. El docente tomará la decisión final.";
+        float descriptionHeight = descriptionStyle.CalcHeight(new GUIContent(description), contentWidth);
+
+        string status = voteSubmitted ? "Decisión enviada" : isSubmittingVote ? "Enviando voto…" : voteMessage;
+        string countText = "Votos del grupo: " + continueVotes + " continuar · " + alternativeVotes + " explorar alternativa";
+        float statusHeight = Mathf.Max(32f, statusStyle.CalcHeight(
+            new GUIContent("No se pudo enviar el voto. Comprueba la conexión e inténtalo de nuevo."), contentWidth));
+        float countHeight = Mathf.Max(32f, statusStyle.CalcHeight(new GUIContent(countText), contentWidth));
+        float fixedHeight = paddingY * 2f + titleHeight + descriptionHeight + statusHeight + countHeight + sectionGap * 4f;
+        float buttonAreaHeight = panelHeight - fixedHeight;
+        float minimumTouchHeight = 96f;
+        float buttonGap = sectionGap;
+        bool stackButtons = screenHeight > screenWidth
+            && buttonAreaHeight >= minimumTouchHeight * 2f + buttonGap;
+        float buttonHeight = stackButtons
+            ? Mathf.Min(160f, (buttonAreaHeight - buttonGap) / 2f)
+            : Mathf.Min(160f, buttonAreaHeight);
+        // If an unusually short viewport cannot fit the preferred target, use the remaining height
+        // rather than allowing the button row to collide with the status and vote-count areas.
+        buttonHeight = Mathf.Max(1f, buttonHeight);
+        float buttonWidth = stackButtons ? contentWidth : (contentWidth - buttonGap) / 2f;
+
+        float cursorY = top + paddingY;
+        GUI.Label(new Rect(x + paddingX, cursorY, contentWidth, titleHeight), "Votación final", titleStyle);
+        cursorY += titleHeight + sectionGap;
+        GUI.Label(new Rect(x + paddingX, cursorY, contentWidth, descriptionHeight), description, descriptionStyle);
+        cursorY += descriptionHeight + sectionGap;
+
+        Rect continueRect = new Rect(x + paddingX, cursorY, buttonWidth, buttonHeight);
+        Rect alternativeRect = stackButtons
+            ? new Rect(x + paddingX, continueRect.yMax + buttonGap, buttonWidth, buttonHeight)
+            : new Rect(continueRect.xMax + buttonGap, cursorY, buttonWidth, buttonHeight);
         GUI.enabled = !voteSubmitted && !isSubmittingVote;
         if (GUI.Button(continueRect, "Continuar a la siguiente\nnarrativa", decisionCardStyle))
             StartCoroutine(SubmitVote("continue"));
@@ -878,12 +912,12 @@ private void DrawReflectionWaitScreen()
             StartCoroutine(SubmitVote("alternative"));
         GUI.enabled = true;
 
-        string status = voteSubmitted ? "Decisión enviada" : isSubmittingVote ? "Enviando voto…" : voteMessage;
+        cursorY = alternativeRect.yMax + sectionGap;
         if (!string.IsNullOrEmpty(status))
-            GUI.Label(new Rect(x + 24, buttonY + buttonHeight + 22, width - 48, 46), status, statusStyle);
+            GUI.Label(new Rect(x + paddingX, cursorY, contentWidth, statusHeight), status, statusStyle);
+        cursorY += statusHeight + sectionGap;
         if (voteSubmitted)
-            GUI.Label(new Rect(x + 24, top + Screen.height * 0.55f, width - 48, 34),
-                "Votos del grupo: " + continueVotes + " continuar · " + alternativeVotes + " explorar alternativa", statusStyle);
+            GUI.Label(new Rect(x + paddingX, cursorY, contentWidth, countHeight), countText, statusStyle);
     }
 
     private IEnumerator SubmitVote(string choice)
