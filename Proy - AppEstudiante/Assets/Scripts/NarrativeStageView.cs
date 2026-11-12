@@ -155,7 +155,7 @@ public class NarrativeStageView : MonoBehaviour
             interactionMessage = string.Empty;
         }
 
-        if (previousStage == 2 && stage != 2 && blurredEndFrame != null)
+        if (stage == 0 && blurredEndFrame != null)
         {
             Destroy(blurredEndFrame);
             blurredEndFrame = null;
@@ -164,7 +164,7 @@ public class NarrativeStageView : MonoBehaviour
         if (stage == 1 && !videoStarted)
         {
             videoStarted = true;
-            StartCoroutine(PrepareAndPlayVideo());
+            StartCoroutine(PrepareBlurredPreview());
         }
         else if (stage != 1 && videoStarted)
         {
@@ -173,10 +173,10 @@ public class NarrativeStageView : MonoBehaviour
             StopVideo(stage == 2);
         }
 
-        ApplyMediaState();
+
     }
 
-    private IEnumerator PrepareAndPlayVideo()
+    private IEnumerator PrepareBlurredPreview()
     {
         int currentGeneration = generation;
         videoError = null;
@@ -226,10 +226,7 @@ public class NarrativeStageView : MonoBehaviour
         videoPlayer.renderMode = VideoRenderMode.RenderTexture;
         videoPlayer.targetTexture = videoTexture;
         videoPlayer.aspectRatio = VideoAspectRatio.FitInside;
-        videoPlayer.audioOutputMode = VideoAudioOutputMode.Direct;
-        videoPlayer.EnableAudioTrack(0, true);
-        videoPlayer.SetDirectAudioMute(0, false);
-        videoPlayer.SetDirectAudioVolume(0, 1f);
+        videoPlayer.audioOutputMode = VideoAudioOutputMode.None;
         videoPlayer.isLooping = false;
         videoPlayer.skipOnDrop = true;
         videoPlayer.errorReceived += HandleVideoError;
@@ -258,67 +255,18 @@ public class NarrativeStageView : MonoBehaviour
             yield break;
         }
 
-        ApplyMediaState();
+        // El video completo se reproduce en la proyección web del docente.
+        // En la tablet solo se decodifica un fotograma para mostrarlo borroso.
+        videoPlayer.Play();
+        yield return new WaitForSecondsRealtime(0.2f);
+        if (currentGeneration != generation || videoPlayer == null || currentStage != 1)
+            yield break;
+
+        videoPlayer.Pause();
+        yield return new WaitForEndOfFrame();
+        blurredEndFrame = CreateBlurredSnapshot();
+        videoPlayer.Stop();
     }
-
-    private void ApplyMediaState()
-    {
-        if (currentStage != 1 || videoPlayer == null || !videoPlayer.isPrepared)
-            return;
-
-        // Apply each teacher command against this tablet's actual playback clock.
-        // Tablets can finish downloading/preparing at different times, so the
-        // server's elapsed position is not a reliable seek target for live controls.
-        if (appliedMediaRevision != mediaRevision)
-        {
-            switch (mediaCommand)
-            {
-                case "restart":
-                    videoFinished = false;
-                    videoPlayer.time = 0;
-                    break;
-                case "back-5":
-                    videoPlayer.time = Math.Max(0, videoPlayer.time - 5);
-                    break;
-                case "forward-5":
-                    double targetTime = videoPlayer.time + 5;
-                    if (videoPlayer.length > 0)
-                        targetTime = Math.Min(targetTime, Math.Max(0, videoPlayer.length - 0.1));
-                    videoPlayer.time = targetTime;
-                    break;
-                case "sync":
-                    videoPlayer.time = Math.Max(0, mediaPositionSeconds);
-                    break;
-            }
-
-            appliedMediaRevision = mediaRevision;
-        }
-
-        // Reassert the requested play state on every API poll. This also recovers
-        // when a VideoPlayer misses a pause/play transition during prepare or seek.
-        if (mediaPaused)
-        {
-            if (videoPlayer.isPlaying)
-                videoPlayer.Pause();
-
-            if (!videoFinished && blurredEndFrame == null && !pauseBlurCapturePending)
-            {
-                pauseBlurCapturePending = true;
-                StartCoroutine(CaptureBlurredFrame(false));
-            }
-        }
-        else if (!videoPlayer.isPlaying && !videoFinished)
-        {
-            videoPlayer.Play();
-        }
-
-        if (!mediaPaused && !videoFinished && blurredEndFrame != null)
-        {
-            Destroy(blurredEndFrame);
-            blurredEndFrame = null;
-        }
-    }
-
     private void HandleVideoEnded(VideoPlayer source)
     {
         videoFinished = true;
@@ -497,10 +445,8 @@ public class NarrativeStageView : MonoBehaviour
         GUI.DrawTexture(new Rect(0, 0, Screen.width, Screen.height), Texture2D.blackTexture);
         GUI.color = Color.white;
 
-        if ((videoFinished || mediaPaused) && blurredEndFrame != null)
+        if (blurredEndFrame != null)
             GUI.DrawTexture(new Rect(0, 0, Screen.width, Screen.height), blurredEndFrame, ScaleMode.ScaleToFit);
-        else if (videoTexture != null && videoPlayer != null && (videoPlayer.isPlaying || mediaPaused))
-            GUI.DrawTexture(new Rect(0, 0, Screen.width, Screen.height), videoTexture, ScaleMode.ScaleToFit);
 
         float width = Mathf.Min(Screen.width - 40, 1200);
         float x = (Screen.width - width) / 2f;
@@ -510,12 +456,8 @@ public class NarrativeStageView : MonoBehaviour
 
         if (!string.IsNullOrEmpty(videoError))
             GUI.Label(new Rect(24, Screen.height * 0.45f, Screen.width - 48, 90), videoError, statusStyle);
-        else if (videoPlayer == null || videoPlayer.isPlaying == false && videoPlayer.isPrepared == false)
-            GUI.Label(new Rect(24, Screen.height * 0.45f, Screen.width - 48, 60), "Preparando la Narrativa inicial…", statusStyle);
-        else if (videoPlayer.isPrepared && videoFinished)
-            GUI.Label(new Rect(24, Screen.height * 0.45f, Screen.width - 48, 60), "Narrativa finalizada. Esperando al docente…", statusStyle);
-
-        DrawTimeline();
+        else
+            GUI.Label(new Rect(24, Screen.height * 0.45f, Screen.width - 48, 60), "La narrativa se reproduce en la pantalla del aula.", statusStyle);
         DrawTransitionFeedback();
     }
 
