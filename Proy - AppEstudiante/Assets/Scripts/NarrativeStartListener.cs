@@ -25,6 +25,7 @@ public class NarrativeStartListener : MonoBehaviour
         public string advanceMode;
         public string finalDecision;
         public int voteRound;
+        public int volumePercent = 100;
     }
 
     [SerializeField] private string serverBaseUrl = "http://127.0.0.1:5080";
@@ -130,7 +131,8 @@ private IEnumerator SynchronizeNarrative()
                                 status.alternativeVotes,
                                 status.advanceMode ?? "automatic",
                                 status.finalDecision ?? string.Empty,
-                                status.voteRound
+                                status.voteRound,
+                                status.volumePercent
                             );
                         }
                     }

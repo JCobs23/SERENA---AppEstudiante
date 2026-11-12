@@ -14,6 +14,15 @@ public class NarrativeStageView : MonoBehaviour
         { "Curioso", "Miedo a la exclusión", "Neutral", "Confundido", "Incómodo" };
     private static readonly string[] DecisionValues =
         { "Dialogar directamente", "Evitar involucrarse", "Difundir el rumor", "Cambiar el tema" };
+    // Etapa 4: cada tablet reproduce la consecuencia de la decisión que eligió ese estudiante.
+    // Mismo orden que DecisionValues.
+    private static readonly string[] DecisionVideoFiles =
+    {
+        "Decision_DialogarDirectamente.mp4",
+        "Decision_EvitarInvolucrarse.mp4",
+        "Decision_DifundirRumor.mp4",
+        "Decision_CambiarTema.mp4"
+    };
 
     [Serializable]
     private class InteractionRequest
@@ -45,6 +54,7 @@ public class NarrativeStageView : MonoBehaviour
     private bool pauseBlurCapturePending;
     private double mediaPositionSeconds;
     private string mediaCommand = string.Empty;
+    private int volumePercent = 100;
     private VideoPlayer videoPlayer;
     private RenderTexture videoTexture;
     private Texture2D blurredEndFrame;
@@ -109,9 +119,11 @@ public class NarrativeStageView : MonoBehaviour
         int alternativeVoteCount,
         string mode,
         string decision,
-        int currentVoteRound
+        int currentVoteRound,
+        int volume = 100
     )
     {
+        volumePercent = Mathf.Clamp(volume, 0, 100);
         int previousStage = currentStage;
         if (previousStage != stage && previousStage > 0 && stage > 1)
         {
@@ -166,94 +178,38 @@ public class NarrativeStageView : MonoBehaviour
             videoStarted = true;
             StartCoroutine(PrepareBlurredPreview());
         }
-        else if (stage != 1 && videoStarted)
+        else if (stage == 4 && previousStage != 4)
+        {
+            if (videoStarted)
+                StopVideo(true);
+            if (selectedDecisionIndex >= 0 && selectedDecisionIndex < DecisionVideoFiles.Length)
+            {
+                videoStarted = true;
+                StartCoroutine(PrepareDecisionVideo(DecisionVideoFiles[selectedDecisionIndex]));
+            }
+            else
+            {
+                videoError = "No se registró una decisión en esta tablet, así que no hay video para mostrar.";
+                Debug.LogWarning("Serena: la etapa 4 comenzó sin una decisión seleccionada en este dispositivo.");
+            }
+        }
+        else if (stage != 1 && stage != 4 && videoStarted)
         {
             if (stage == 2 && blurredEndFrame == null && videoTexture != null)
                 blurredEndFrame = CreateBlurredSnapshot();
-            StopVideo(stage == 2);
+            // Al salir de la etapa 4 se conserva el último fotograma borroso de la consecuencia.
+            StopVideo(stage == 2 || previousStage == 4);
         }
 
-
+        ApplyMediaState();
     }
 
     private IEnumerator PrepareBlurredPreview()
     {
         int currentGeneration = generation;
-        videoError = null;
-        string sourcePath = Path.Combine(Application.streamingAssetsPath, videoFileName);
-        byte[] videoBytes = null;
-
-        using (var request = UnityWebRequest.Get(sourcePath))
-        {
-            request.timeout = 30;
-            yield return request.SendWebRequest();
-
-            if (currentGeneration != generation || currentStage != 1)
-                yield break;
-
-            if (request.result == UnityWebRequest.Result.Success)
-                videoBytes = request.downloadHandler.data;
-        }
-
-        if (videoBytes == null || videoBytes.Length == 0)
-        {
-            videoError = "No se pudo cargar " + videoFileName + ". Revisa Assets/StreamingAssets.";
-            Debug.LogWarning("Serena: no se pudo cargar el video de la Narrativa inicial.");
+        yield return StartCoroutine(PrepareVideoPlayer(videoFileName, 1, false));
+        if (currentGeneration != generation || currentStage != 1 || videoPlayer == null || !videoPlayer.isPrepared)
             yield break;
-        }
-
-        string localVideoPath = Path.Combine(Application.persistentDataPath, videoFileName);
-        try
-        {
-            File.WriteAllBytes(localVideoPath, videoBytes);
-        }
-        catch (Exception)
-        {
-            if (currentGeneration == generation)
-                videoError = "No se pudo preparar el video en este dispositivo.";
-            yield break;
-        }
-
-        if (currentGeneration != generation || currentStage != 1)
-            yield break;
-
-        videoTexture = new RenderTexture(Mathf.Max(640, Screen.width), Mathf.Max(360, Screen.height), 0, RenderTextureFormat.ARGB32);
-        videoTexture.Create();
-        videoPlayer = gameObject.AddComponent<VideoPlayer>();
-        videoPlayer.playOnAwake = false;
-        videoPlayer.source = VideoSource.Url;
-        videoPlayer.url = localVideoPath;
-        videoPlayer.renderMode = VideoRenderMode.RenderTexture;
-        videoPlayer.targetTexture = videoTexture;
-        videoPlayer.aspectRatio = VideoAspectRatio.FitInside;
-        videoPlayer.audioOutputMode = VideoAudioOutputMode.None;
-        videoPlayer.isLooping = false;
-        videoPlayer.skipOnDrop = true;
-        videoPlayer.errorReceived += HandleVideoError;
-        videoPlayer.loopPointReached += HandleVideoEnded;
-        videoPlayer.Prepare();
-
-        float waitSeconds = 0f;
-        while (currentGeneration == generation
-            && currentStage == 1
-            && videoPlayer != null
-            && !videoPlayer.isPrepared
-            && string.IsNullOrEmpty(videoError)
-            && waitSeconds < 30f)
-        {
-            waitSeconds += Time.unscaledDeltaTime;
-            yield return null;
-        }
-
-        if (currentGeneration != generation || currentStage != 1)
-            yield break;
-
-        if (videoPlayer == null || !videoPlayer.isPrepared)
-        {
-            if (string.IsNullOrEmpty(videoError))
-                videoError = "El video no pudo iniciar en este dispositivo.";
-            yield break;
-        }
 
         // El video completo se reproduce en la proyección web del docente.
         // En la tablet solo se decodifica un fotograma para mostrarlo borroso.
@@ -267,6 +223,154 @@ public class NarrativeStageView : MonoBehaviour
         blurredEndFrame = CreateBlurredSnapshot();
         videoPlayer.Stop();
     }
+
+    private IEnumerator PrepareDecisionVideo(string decisionVideoFile)
+    {
+        int currentGeneration = generation;
+        yield return StartCoroutine(PrepareVideoPlayer(decisionVideoFile, 4, true));
+        if (currentGeneration != generation || currentStage != 4 || videoPlayer == null || !videoPlayer.isPrepared)
+            yield break;
+
+        // El docente controla pausa, ±5 s y volumen desde la proyección.
+        ApplyMediaState();
+    }
+
+    // Copia el video de StreamingAssets al almacenamiento local (necesario en Android)
+    // y deja un VideoPlayer preparado. Quien lo llama decide si reproducirlo.
+    private IEnumerator PrepareVideoPlayer(string fileName, int expectedStage, bool withAudio)
+    {
+        int currentGeneration = generation;
+        videoError = null;
+        string sourcePath = Path.Combine(Application.streamingAssetsPath, fileName);
+        byte[] videoBytes = null;
+
+        using (var request = UnityWebRequest.Get(sourcePath))
+        {
+            request.timeout = 30;
+            yield return request.SendWebRequest();
+
+            if (currentGeneration != generation || currentStage != expectedStage)
+                yield break;
+
+            if (request.result == UnityWebRequest.Result.Success)
+                videoBytes = request.downloadHandler.data;
+        }
+
+        if (videoBytes == null || videoBytes.Length == 0)
+        {
+            videoError = "No se pudo cargar " + fileName + ". Revisa Assets/StreamingAssets.";
+            Debug.LogWarning("Serena: no se pudo cargar el video " + fileName + ".");
+            yield break;
+        }
+
+        string localVideoPath = Path.Combine(Application.persistentDataPath, fileName);
+        try
+        {
+            File.WriteAllBytes(localVideoPath, videoBytes);
+        }
+        catch (Exception)
+        {
+            if (currentGeneration == generation)
+                videoError = "No se pudo preparar el video en este dispositivo.";
+            yield break;
+        }
+
+        if (currentGeneration != generation || currentStage != expectedStage)
+            yield break;
+
+        videoTexture = new RenderTexture(Mathf.Max(640, Screen.width), Mathf.Max(360, Screen.height), 0, RenderTextureFormat.ARGB32);
+        videoTexture.Create();
+        videoPlayer = gameObject.AddComponent<VideoPlayer>();
+        videoPlayer.playOnAwake = false;
+        videoPlayer.source = VideoSource.Url;
+        videoPlayer.url = localVideoPath;
+        videoPlayer.renderMode = VideoRenderMode.RenderTexture;
+        videoPlayer.targetTexture = videoTexture;
+        videoPlayer.aspectRatio = VideoAspectRatio.FitInside;
+        if (withAudio)
+        {
+            videoPlayer.audioOutputMode = VideoAudioOutputMode.Direct;
+            videoPlayer.EnableAudioTrack(0, true);
+            videoPlayer.SetDirectAudioMute(0, false);
+            videoPlayer.SetDirectAudioVolume(0, volumePercent / 100f);
+        }
+        else
+        {
+            videoPlayer.audioOutputMode = VideoAudioOutputMode.None;
+        }
+        videoPlayer.isLooping = false;
+        videoPlayer.skipOnDrop = true;
+        videoPlayer.errorReceived += HandleVideoError;
+        videoPlayer.loopPointReached += HandleVideoEnded;
+        videoPlayer.Prepare();
+
+        float waitSeconds = 0f;
+        while (currentGeneration == generation
+            && currentStage == expectedStage
+            && videoPlayer != null
+            && !videoPlayer.isPrepared
+            && string.IsNullOrEmpty(videoError)
+            && waitSeconds < 30f)
+        {
+            waitSeconds += Time.unscaledDeltaTime;
+            yield return null;
+        }
+
+        if (currentGeneration != generation || currentStage != expectedStage)
+            yield break;
+
+        if (videoPlayer == null || !videoPlayer.isPrepared)
+        {
+            if (string.IsNullOrEmpty(videoError))
+                videoError = "El video no pudo iniciar en este dispositivo.";
+        }
+    }
+
+    // Aplica en la etapa 4 los controles del docente (pausa, ±5 s, volumen)
+    // sobre el reloj de reproducción real de esta tablet.
+    private void ApplyMediaState()
+    {
+        if (currentStage != 4 || videoPlayer == null || !videoPlayer.isPrepared)
+            return;
+
+        if (appliedMediaRevision != mediaRevision)
+        {
+            switch (mediaCommand)
+            {
+                case "restart":
+                    videoFinished = false;
+                    videoPlayer.time = 0;
+                    break;
+                case "back-5":
+                    videoFinished = false;
+                    videoPlayer.time = Math.Max(0, videoPlayer.time - 5);
+                    break;
+                case "forward-5":
+                    double targetTime = videoPlayer.time + 5;
+                    if (videoPlayer.length > 0)
+                        targetTime = Math.Min(targetTime, Math.Max(0, videoPlayer.length - 0.1));
+                    videoPlayer.time = targetTime;
+                    break;
+            }
+
+            appliedMediaRevision = mediaRevision;
+        }
+
+        videoPlayer.SetDirectAudioVolume(0, volumePercent / 100f);
+
+        // Se reafirma el estado en cada consulta a la API por si el VideoPlayer
+        // perdió una transición de pausa/reproducción mientras se preparaba.
+        if (mediaPaused)
+        {
+            if (videoPlayer.isPlaying)
+                videoPlayer.Pause();
+        }
+        else if (!videoPlayer.isPlaying && !videoFinished)
+        {
+            videoPlayer.Play();
+        }
+    }
+
     private void HandleVideoEnded(VideoPlayer source)
     {
         videoFinished = true;
@@ -380,8 +484,8 @@ public class NarrativeStageView : MonoBehaviour
 
     private void HandleVideoError(VideoPlayer source, string message)
     {
-        videoError = "El video de la Narrativa inicial no es compatible con este dispositivo.";
-        Debug.LogWarning("Serena: el video de la Narrativa inicial no es compatible con este dispositivo.");
+        videoError = "El video no es compatible con este dispositivo.";
+        Debug.LogWarning("Serena: el video no es compatible con este dispositivo. " + message);
     }
 
     private void StopVideo(bool preserveBlurredFrame = false)
@@ -437,9 +541,16 @@ public class NarrativeStageView : MonoBehaviour
             return;
         }
 
-        // Etapas 1 y 4: el video (narrativa o consecuencia de la decisión) se proyecta
-        // en la pantalla del docente; la tablet solo muestra el fotograma borroso.
-        if (currentStage != 1 && currentStage != 4)
+        if (currentStage == 4)
+        {
+            DrawDecisionConsequenceVideo();
+            DrawTransitionFeedback();
+            return;
+        }
+
+        // Etapa 1: la narrativa se proyecta en la pantalla del docente;
+        // la tablet solo muestra el fotograma borroso.
+        if (currentStage != 1)
             return;
 
         GUI.depth = -100;
@@ -453,18 +564,49 @@ public class NarrativeStageView : MonoBehaviour
         float width = Mathf.Min(Screen.width - 40, 1200);
         float x = (Screen.width - width) / 2f;
         GUI.Box(new Rect(x, 20, width, 154), GUIContent.none, bannerStyle);
-        GUI.Label(new Rect(x + 24, 34, width - 48, 48), "ETAPA " + currentStage + " · " + stageLabel, titleStyle);
+        GUI.Label(new Rect(x + 24, 34, width - 48, 48), "ETAPA 1 · " + stageLabel, titleStyle);
         GUI.Label(new Rect(x + 24, 84, width - 48, 78), stageDescription, descriptionStyle);
 
         if (!string.IsNullOrEmpty(videoError))
             GUI.Label(new Rect(24, Screen.height * 0.45f, Screen.width - 48, 90), videoError, statusStyle);
         else
-            GUI.Label(new Rect(24, Screen.height * 0.45f, Screen.width - 48, 60),
-                currentStage == 4
-                    ? "Mira en la pantalla del aula lo que ocurre con la decisión del grupo."
-                    : "La narrativa se reproduce en la pantalla del aula.",
-                statusStyle);
+            GUI.Label(new Rect(24, Screen.height * 0.45f, Screen.width - 48, 60), "La narrativa se reproduce en la pantalla del aula.", statusStyle);
         DrawTransitionFeedback();
+    }
+
+    // Etapa 4: video de la consecuencia de la decisión que eligió este estudiante.
+    private void DrawDecisionConsequenceVideo()
+    {
+        GUI.depth = -100;
+        GUI.color = Color.black;
+        GUI.DrawTexture(new Rect(0, 0, Screen.width, Screen.height), Texture2D.blackTexture);
+        GUI.color = Color.white;
+
+        bool videoReady = videoPlayer != null && videoPlayer.isPrepared && videoTexture != null;
+        if (videoReady && !videoFinished)
+            GUI.DrawTexture(new Rect(0, 0, Screen.width, Screen.height), videoTexture, ScaleMode.ScaleToFit);
+        else if (blurredEndFrame != null)
+            GUI.DrawTexture(new Rect(0, 0, Screen.width, Screen.height), blurredEndFrame, ScaleMode.ScaleToFit);
+
+        float width = Mathf.Min(Screen.width - 40, 1200);
+        float x = (Screen.width - width) / 2f;
+        GUI.Box(new Rect(x, 20, width, 126), GUIContent.none, bannerStyle);
+        GUI.Label(new Rect(x + 24, 34, width - 48, 42), "ETAPA 4 · " + stageLabel, titleStyle);
+        string decisionText = selectedDecisionIndex >= 0 && selectedDecisionIndex < DecisionValues.Length
+            ? "Tu decisión: " + DecisionValues[selectedDecisionIndex]
+            : stageDescription;
+        GUI.Label(new Rect(x + 24, 78, width - 48, 54), decisionText, descriptionStyle);
+
+        if (!string.IsNullOrEmpty(videoError))
+            GUI.Label(new Rect(24, Screen.height * 0.45f, Screen.width - 48, 90), videoError, statusStyle);
+        else if (!videoReady)
+            GUI.Label(new Rect(24, Screen.height * 0.45f, Screen.width - 48, 60), "Preparando el video de tu decisión…", statusStyle);
+        else if (videoFinished)
+            GUI.Label(new Rect(24, Screen.height * 0.45f, Screen.width - 48, 60), "Video finalizado. Espera al docente…", statusStyle);
+        else if (mediaPaused)
+            GUI.Label(new Rect(24, Screen.height * 0.45f, Screen.width - 48, 60), "El docente pausó el video.", statusStyle);
+
+        DrawTimeline();
     }
 
     private void DrawEmotionSelection()
