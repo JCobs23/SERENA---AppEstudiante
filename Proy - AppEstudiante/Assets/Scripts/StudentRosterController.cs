@@ -18,7 +18,7 @@ public sealed class StudentRosterController : MonoBehaviour
     [SerializeField] private Color readyColor = new(0.05f, 0.75f, 0.48f, 1f);
     [SerializeField] private Color notReadyColor = new(0.85f, 0.10f, 0.15f, 1f);
 
-    [Header("Conexión")]
+    [Header("Connection")]
     [SerializeField] private string serverBaseUrl = "http://127.0.0.1:5080";
     [SerializeField] private float refreshSeconds = 1f;
 
@@ -78,7 +78,7 @@ public sealed class StudentRosterController : MonoBehaviour
 
         if (request.result != UnityWebRequest.Result.Success)
         {
-            Debug.LogWarning($"No se pudo consultar estudiantes: {request.error}");
+            Debug.LogWarning($"Could not retrieve students: {request.error}");
             yield break;
         }
 
@@ -89,7 +89,7 @@ public sealed class StudentRosterController : MonoBehaviour
         }
         catch (Exception exception)
         {
-            Debug.LogWarning($"Respuesta inválida: {exception.Message}");
+            Debug.LogWarning($"Invalid response: {exception.Message}");
             yield break;
         }
 

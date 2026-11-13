@@ -2539,7 +2539,7 @@ MonoBehaviour:
   m_OnCullStateChanged:
     m_PersistentCalls:
       m_Calls: []
-  m_text: Lista de Estudiantes
+  m_text: Student List
   m_isRightToLeft: 0
   m_fontAsset: {fileID: 11400000, guid: 5d26d108e13985b4e9b3c00a29d0500b, type: 2}
   m_sharedMaterial: {fileID: 753986176}
@@ -2885,7 +2885,7 @@ MonoBehaviour:
   m_OnCullStateChanged:
     m_PersistentCalls:
       m_Calls: []
-  m_text: "\xBFReady?"
+  m_text: "Ready?"
   m_isRightToLeft: 0
   m_fontAsset: {fileID: 11400000, guid: d5fa572af2bcb194e8771dc735f8a580, type: 2}
   m_sharedMaterial: {fileID: 1356774960}
@@ -5471,7 +5471,7 @@ MonoBehaviour:
   m_OnCullStateChanged:
     m_PersistentCalls:
       m_Calls: []
-  m_text: Lista de Estudiantes
+  m_text: Student List
   m_isRightToLeft: 0
   m_fontAsset: {fileID: 11400000, guid: 5d26d108e13985b4e9b3c00a29d0500b, type: 2}
   m_sharedMaterial: {fileID: 1248143217}

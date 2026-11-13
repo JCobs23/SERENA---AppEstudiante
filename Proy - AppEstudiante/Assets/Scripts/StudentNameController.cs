@@ -74,8 +74,8 @@ public static class StudentSessionContext
             Handheld.Vibrate();
         NarrativeStarted = started;
         CurrentNarrativeStage = stage;
-        CurrentNarrativeStageLabel = label;
-        CurrentNarrativeStageDescription = description;
+        CurrentNarrativeStageLabel = TranslateStageLabel(stage);
+        CurrentNarrativeStageDescription = TranslateStageDescription(stage);
         VotingOpen = votingOpen;
         ContinueVotes = continueVotes;
         AlternativeVotes = alternativeVotes;
@@ -83,6 +83,35 @@ public static class StudentSessionContext
         FinalDecision = finalDecision;
         VoteRound = voteRound;
     }
+
+    public static string TranslateStageLabel(int stage)
+    {
+        switch (stage)
+        {
+            case 0: return "Introduction";
+            case 1: return "Initial Narrative";
+            case 2: return "Recognize the Emotion";
+            case 3: return "Choose a Decision";
+            case 4: return "See the Consequences";
+            case 5: return "Reflect as a Group";
+            default: return string.Empty;
+        }
+    }
+
+    public static string TranslateStageDescription(int stage)
+    {
+        switch (stage)
+        {
+            case 0: return "Watch the introductory video before the story begins.";
+            case 1: return "Observe the situation and understand the context.";
+            case 2: return "Identify the emotion present in this situation.";
+            case 3: return "Think about the alternatives and choose how to act.";
+            case 4: return "Observe how the situation affected everyone involved.";
+            case 5: return "Share a reflection on what happened.";
+            default: return string.Empty;
+        }
+    }
+
     public static void SetNarrativeIntroCompleted(bool completed)
     {
         NarrativeIntroCompleted = completed;
@@ -178,8 +207,8 @@ public class StudentNameController : MonoBehaviour
         if (request.result != UnityWebRequest.Result.Success)
         {
             ShowConnectionMessage(request.responseCode == 404
-                ? "La sesión expiró. Ingresa nuevamente el código."
-                : "No se pudo conectar con Serena. Revisa la red y vuelve a intentar.");
+                ? "The session has expired. Enter the code again."
+                : "Could not connect to Serena. Check your network and try again.");
             if (continueButton != null) continueButton.interactable = true;
             yield break;
         }
@@ -187,7 +216,7 @@ public class StudentNameController : MonoBehaviour
         var response = JsonUtility.FromJson<JoinStudentResponse>(request.downloadHandler.text);
         if (response == null || string.IsNullOrWhiteSpace(response.studentId))
         {
-            ShowConnectionMessage("El servidor respondió con un dato inválido. Intenta nuevamente.");
+            ShowConnectionMessage("The server returned invalid data. Please try again.");
             if (continueButton != null) continueButton.interactable = true;
             yield break;
         }
@@ -217,7 +246,7 @@ public class StudentNameController : MonoBehaviour
         StudentSessionContext.SetStudent(studentName, studentId);
         SaveStudentData(studentName, studentId, StudentSessionContext.SessionId);
 
-        // Si se ha configurado una escena, cargarla. Si no, usar la navegación por paneles existente.
+        // Load a scene if one is configured; otherwise use the existing panel navigation.
         if (!string.IsNullOrWhiteSpace(sceneToLoad))
         {
             SceneManager.LoadScene(sceneToLoad);
@@ -251,11 +280,11 @@ public class StudentNameController : MonoBehaviour
         {
             Directory.CreateDirectory(folderPath);
             File.WriteAllText(fullFilePath, JsonUtility.ToJson(data, true));
-            Debug.Log("Datos de la sesión del estudiante guardados localmente.");
+            Debug.Log("Student session data saved locally.");
         }
         catch (Exception exception)
         {
-            Debug.LogError("No se pudieron guardar los datos del estudiante: " + exception.Message);
+            Debug.LogError("Could not save student data: " + exception.Message);
         }
     }
 }

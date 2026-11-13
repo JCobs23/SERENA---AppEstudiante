@@ -84,7 +84,7 @@ public class SessionCodeEntryController : MonoBehaviour
     {
         if (code.Length != CodeLength || !IsNumeric(code))
         {
-            if (statusText != null) statusText.text = "Ingresa un código válido de 6 dígitos.";
+            if (statusText != null) statusText.text = "Enter a valid 6-digit code.";
             return;
         }
 
@@ -103,8 +103,8 @@ public class SessionCodeEntryController : MonoBehaviour
         {
             if (statusText != null)
                 statusText.text = request.responseCode == 404
-                    ? "El código no existe o la sesión ya expiró."
-                    : "No se pudo conectar con Serena. Revisa la red y la dirección del servidor.";
+                    ? "This code does not exist or the session has expired."
+                    : "Could not connect to Serena. Check your network and the server address.";
             if (joinButton != null) joinButton.interactable = true;
             yield break;
         }

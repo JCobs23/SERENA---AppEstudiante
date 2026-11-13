@@ -180,7 +180,7 @@ private IEnumerator PlayIntroduction()
 
         if (videoBytes == null || videoBytes.Length == 0)
         {
-            ShowIntroError("No se pudo cargar la introducción. Revisa que SerenaIntro.mp4 esté en Assets/StreamingAssets.");
+            ShowIntroError("Could not load the introduction. Make sure SerenaIntro.mp4 is in Assets/StreamingAssets.");
             yield break;
         }
 
@@ -192,7 +192,7 @@ private IEnumerator PlayIntroduction()
         catch (Exception)
         {
             if (generation == narrativeGeneration)
-                ShowIntroError("No se pudo preparar el video en este dispositivo.");
+                ShowIntroError("Could not prepare the video on this device.");
             yield break;
         }
 
@@ -234,7 +234,7 @@ private IEnumerator PlayIntroduction()
 
         if (!videoPlayer.isPrepared)
         {
-            ShowIntroError(string.IsNullOrEmpty(introError) ? "El video no pudo iniciar en este dispositivo." : introError);
+            ShowIntroError(string.IsNullOrEmpty(introError) ? "The video could not start on this device." : introError);
             yield break;
         }
 
@@ -248,14 +248,14 @@ private IEnumerator PlayIntroduction()
 
     private void HandleVideoError(VideoPlayer source, string message)
     {
-        ShowIntroError("El video no es compatible con este dispositivo.");
+        ShowIntroError("This video is not supported on this device.");
     }
 
     private void ShowIntroError(string message)
     {
         introError = message;
         introVisible = true;
-        Debug.LogWarning("Serena: no se pudo reproducir la introducción.");
+        Debug.LogWarning("Serena: the introduction could not be played.");
     }
 
     private void FinishIntroduction()
@@ -334,24 +334,24 @@ private IEnumerator ReportIntroductionCompleted()
 
             if (StudentSessionContext.NarrativeIntroCompleted)
             {
-                GUI.Label(new Rect(24, Screen.height * 0.45f, Screen.width - 48, 60), "Introducción terminada. Esperando al grupo…", introTextStyle);
+                GUI.Label(new Rect(24, Screen.height * 0.45f, Screen.width - 48, 60), "Introduction complete. Waiting for the group…", introTextStyle);
                 return;
             }
             if (!string.IsNullOrEmpty(introError))
             {
                 GUI.Box(new Rect(24, Screen.height * 0.34f, Screen.width - 48, Screen.height * 0.32f), GUIContent.none, bannerStyle);
                 GUI.Label(new Rect(48, Screen.height * 0.38f, Screen.width - 96, Screen.height * 0.16f), introError, introTextStyle);
-                if (GUI.Button(new Rect(Screen.width * 0.25f, Screen.height * 0.58f, Screen.width * 0.5f, 58), "Continuar sin introducción"))
+                if (GUI.Button(new Rect(Screen.width * 0.25f, Screen.height * 0.58f, Screen.width * 0.5f, 58), "Continue without introduction"))
                     FinishIntroduction();
             }
             else if (videoPlayer == null || !videoPlayer.isPlaying)
             {
-                GUI.Label(new Rect(24, Screen.height * 0.45f, Screen.width - 48, 60), "Preparando introducción…", introTextStyle);
+                GUI.Label(new Rect(24, Screen.height * 0.45f, Screen.width - 48, 60), "Preparing the introduction…", introTextStyle);
             }
             return;
         }
 
-        // La vista de las etapas con contenido interactivo pertenece a 3_Narrativa.
+        // The interactive story stages are displayed in 3_Narrativa.
         if (currentStage == 1 || currentStage == 2 || currentStage == 3)
             return;
         if (currentStage == 5)
@@ -366,12 +366,12 @@ private IEnumerator ReportIntroductionCompleted()
         float stageX = (Screen.width - stageWidth) / 2f;
         GUI.Box(new Rect(stageX, 20, stageWidth, 154), GUIContent.none, bannerStyle);
         GUI.Label(new Rect(stageX + 24, 34, stageWidth - 48, 48),
-            "ETAPA " + currentStage + " · " + StudentSessionContext.CurrentNarrativeStageLabel, titleStyle);
+            "STAGE " + currentStage + " · " + StudentSessionContext.CurrentNarrativeStageLabel, titleStyle);
         GUI.Label(new Rect(stageX + 24, 84, stageWidth - 48, 78),
             StudentSessionContext.CurrentNarrativeStageDescription, descriptionStyle);
         if (currentStage == 5 && StudentSessionContext.FinalDecision == "continue")
             GUI.Label(new Rect(stageX + 24, 170, stageWidth - 48, 54),
-                "El docente eligió continuar a la siguiente narrativa.", descriptionStyle);
+                "The teacher chose to continue to the next story.", descriptionStyle);
     }
 
     private void EnsureStyles()

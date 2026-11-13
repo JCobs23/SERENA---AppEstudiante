@@ -22,7 +22,7 @@ public class StudentReadyButtonController : MonoBehaviour
 
         if (readyButton == null)
         {
-            Debug.LogError("Este script debe agregarse al GameObject del botón.");
+            Debug.LogError("This script must be attached to the button GameObject.");
             enabled = false;
             return;
         }
@@ -73,7 +73,7 @@ public class StudentReadyButtonController : MonoBehaviour
         }
         else
         {
-            Debug.LogWarning($"No se pudo actualizar Ready: {request.error}");
+            Debug.LogWarning($"Could not update readiness: {request.error}");
         }
 
         isSending = false;
@@ -120,6 +120,6 @@ public class StudentReadyButtonController : MonoBehaviour
         readyButton.image.color = isReady ? green : red;
 
         if (buttonText != null)
-            buttonText.text = isReady ? "I'M READY" : "¿Ready?";
+            buttonText.text = isReady ? "I'M READY" : "Ready?";
     }
 }
