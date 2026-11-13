@@ -47,6 +47,8 @@ public class NarrativeStageView : MonoBehaviour
     private bool videoStarted;
     private bool videoFinished;
     private string videoError;
+    private bool decisionEncouragementPending;
+    private float positiveMessageStartedAt = -1f;
     private int generation;
     private int mediaRevision = -1;
     private int appliedMediaRevision = -1;
@@ -122,10 +124,12 @@ public class NarrativeStageView : MonoBehaviour
     )
     {
         int previousStage = currentStage;
-        if (previousStage != stage && previousStage > 0 && stage > 1)
+        if (previousStage != stage)
         {
             transitionStartedAt = Time.unscaledTime;
-            ShowEncouragement();
+            positiveMessage = string.Empty;
+            positiveMessageStartedAt = -1f;
+            decisionEncouragementPending = previousStage == 3 && stage == 4 && selectedDecisionIndex >= 0;
         }
         currentStage = stage;
         stageLabel = label ?? string.Empty;
@@ -223,6 +227,7 @@ public class NarrativeStageView : MonoBehaviour
         {
             videoError = "No se pudo cargar " + activeVideoFileName + ". Revisa Assets/StreamingAssets.";
             Debug.LogWarning("Serena: no se pudo cargar el video " + activeVideoFileName + ".");
+            ShowDecisionEncouragementIfPending();
             yield break;
         }
 
@@ -235,6 +240,7 @@ public class NarrativeStageView : MonoBehaviour
         {
             if (currentGeneration == generation)
                 videoError = "No se pudo preparar el video en este dispositivo.";
+            ShowDecisionEncouragementIfPending();
             yield break;
         }
 
@@ -279,6 +285,7 @@ public class NarrativeStageView : MonoBehaviour
         {
             if (string.IsNullOrEmpty(videoError))
                 videoError = "El video no pudo iniciar en este dispositivo.";
+            ShowDecisionEncouragementIfPending();
             yield break;
         }
 
@@ -350,6 +357,7 @@ public class NarrativeStageView : MonoBehaviour
     {
         videoFinished = true;
         source.Pause();
+        ShowDecisionEncouragementIfPending();
         StartCoroutine(CaptureBlurredFrame(true));
     }
 
@@ -461,6 +469,7 @@ public class NarrativeStageView : MonoBehaviour
     {
         videoError = "El video de la Narrativa inicial no es compatible con este dispositivo.";
         Debug.LogWarning("Serena: el video de la Narrativa inicial no es compatible con este dispositivo.");
+        ShowDecisionEncouragementIfPending();
     }
 
     private void StopVideo(bool preserveBlurredFrame = false)
@@ -583,19 +592,25 @@ if (currentStage == 5)
             "😰\nMe siento incómodo"
         };
         string[] imageNames = { "curiosidad", "fuera", "neutro", "confundido", "incomodo" };
-        float gapX = contentWidth * 0.035f;
-        float gapY = Screen.height * 0.018f;
-        float cardWidth = Mathf.Min((contentWidth - gapX - 36f) / 2f, 390f);
-        float cardHeight = Mathf.Min(Screen.height * 0.215f, 430f);
-        float gridWidth = cardWidth * 2 + gapX;
-        float left = (contentWidth - gridWidth) / 2f;
+        float gapX = Mathf.Clamp(contentWidth * 0.035f, 8f, 24f);
+        float gapY = Mathf.Clamp(Screen.height * 0.018f, 8f, 20f);
+        float twoColumnCardWidth = Mathf.Min((contentWidth - gapX - 36f) / 2f, 390f);
+        int columns = twoColumnCardWidth < 160f ? 1 : 2;
+        int rows = Mathf.CeilToInt(emotions.Length / (float)columns);
+        float cardWidth = columns == 1 ? contentWidth : twoColumnCardWidth;
         float top = Screen.height * 0.17f;
+        float gridBottom = Screen.height * 0.88f;
+        float availableCardHeight = (gridBottom - top - gapY * (rows - 1)) / rows;
+        float cardHeight = Mathf.Max(48f, Mathf.Min(Screen.height * 0.215f, 430f, availableCardHeight));
+        float gridWidth = cardWidth * columns + gapX * (columns - 1);
+        float left = (contentWidth - gridWidth) / 2f;
 
         for (int i = 0; i < emotions.Length; i++)
         {
-            int row = i / 2;
-            bool centered = i == 4;
-            float x = centered ? (contentWidth - cardWidth) / 2f : left + (i % 2) * (cardWidth + gapX);
+            int row = i / columns;
+            int column = i % columns;
+            bool centered = columns == 2 && i == emotions.Length - 1 && emotions.Length % columns != 0;
+            float x = centered ? (contentWidth - cardWidth) / 2f : left + column * (cardWidth + gapX);
             float y = top + row * (cardHeight + gapY);
             Rect card = new Rect(x, y, cardWidth, cardHeight);
             bool selected = selectedEmotionIndex == i;
@@ -613,7 +628,7 @@ if (currentStage == 5)
 
             if (emotionImages[i] != null)
             {
-                GUI.DrawTexture(card, emotionImages[i], ScaleMode.StretchToFill, true);
+                GUI.DrawTexture(card, emotionImages[i], ScaleMode.ScaleToFit, true);
                 if (pressing)
                 {
                     GUI.color = new Color(0f, 0f, 0f, 0.14f);
@@ -660,16 +675,24 @@ if (currentStage == 5)
         GUI.Label(new Rect(24, headerY + Screen.height * 0.09f, contentWidth - 16, Screen.height * 0.07f),
             "Elige cómo responder. Puedes cambiar tu selección antes de confirmarla.", emotionSubheaderStyle);
 
-        float gapX = contentWidth * 0.035f;
-        float gapY = Screen.height * 0.018f;
-        float cardWidth = Mathf.Min((contentWidth - gapX - 36f) / 2f, 420f);
-        float cardHeight = Mathf.Min(Screen.height * 0.22f, 260f);
-        float left = (contentWidth - (cardWidth * 2 + gapX)) / 2f;
+        float gapX = Mathf.Clamp(contentWidth * 0.035f, 8f, 24f);
+        float gapY = Mathf.Clamp(Screen.height * 0.018f, 8f, 20f);
+        float twoColumnCardWidth = Mathf.Min((contentWidth - gapX - 36f) / 2f, 420f);
+        int columns = twoColumnCardWidth < 160f ? 1 : 2;
+        int rows = Mathf.CeilToInt(DecisionValues.Length / (float)columns);
+        float cardWidth = columns == 1 ? contentWidth : twoColumnCardWidth;
+        float left = (contentWidth - (cardWidth * columns + gapX * (columns - 1))) / 2f;
         float top = Screen.height * 0.28f;
+        float confirmY = Screen.height * 0.82f;
+        float availableCardHeight = (confirmY - top - gapY * rows) / rows;
+        float cardHeight = Mathf.Max(48f, Mathf.Min(Screen.height * 0.22f, 260f, availableCardHeight));
         for (int i = 0; i < DecisionValues.Length; i++)
         {
-            float x = left + (i % 2) * (cardWidth + gapX);
-            float y = top + (i / 2) * (cardHeight + gapY);
+            int row = i / columns;
+            int column = i % columns;
+            bool centered = columns == 2 && i == DecisionValues.Length - 1 && DecisionValues.Length % columns != 0;
+            float x = centered ? (contentWidth - cardWidth) / 2f : left + column * (cardWidth + gapX);
+            float y = top + row * (cardHeight + gapY);
             Rect card = new Rect(x, y, cardWidth, cardHeight);
             GUI.enabled = !isSubmittingInteraction;
             if (GUI.Button(card, DecisionValues[i], selectedDecisionIndex == i ? decisionSelectedCardStyle : decisionCardStyle))
@@ -677,7 +700,7 @@ if (currentStage == 5)
             GUI.enabled = true;
         }
         Rect confirm = new Rect((contentWidth - Mathf.Min(contentWidth * 0.56f, 500f)) / 2f,
-            Screen.height * 0.82f, Mathf.Min(contentWidth * 0.56f, 500f), Mathf.Clamp(Screen.height * 0.075f, 58f, 84f));
+            confirmY, Mathf.Min(contentWidth * 0.56f, 500f), Mathf.Clamp(Screen.height * 0.075f, 58f, 84f));
         GUI.enabled = selectedDecisionIndex >= 0 && !isSubmittingInteraction;
         if (GUI.Button(confirm, isSubmittingInteraction ? "ENVIANDO…" : "CONFIRMAR DECISIÓN", decisionSelectedCardStyle))
             StartCoroutine(SubmitInteraction("decision", DecisionValues[selectedDecisionIndex]));
@@ -707,7 +730,7 @@ if (currentStage == 5)
             GUI.Label(new Rect(24, Screen.height * 0.45f, Screen.width - 48, 90), videoError, statusStyle);
         else if (videoPlayer == null || !videoPlayer.isPrepared)
             GUI.Label(new Rect(24, Screen.height * 0.45f, Screen.width - 48, 60), "Preparando el video de la decisión…", statusStyle);
-        else if (videoFinished)
+        else if (videoFinished && !IsEncouragementVisible())
             GUI.Label(new Rect(24, Screen.height * 0.84f, Screen.width - 48, 48), "Video finalizado. Esperando al docente…", statusStyle);
     }
 
@@ -751,10 +774,10 @@ private void DrawNarrativeSidebar(string heading, int activeStep)
         GUI.Label(new Rect(40, Screen.height * 0.145f, Screen.width - 80, 42),
             "Piensa en tu decisión y en sus consecuencias para las personas involucradas.", reflectionSmallStyle);
 
-        float width = Mathf.Min(Screen.width * 0.78f, 980f);
+        float width = Mathf.Min(Screen.width * 0.88f, 980f);
         float x = (Screen.width - width) / 2f;
         float y = Screen.height * 0.22f;
-        float height = Screen.height * 0.55f;
+        float height = Screen.height * 0.56f;
         GUI.Box(new Rect(x, y, width, height), GUIContent.none, emotionCardStyle);
         GUI.Label(new Rect(x + 24, y + 16, width - 48, 76),
             GetNeutralConsequenceText(), reflectionSmallStyle);
@@ -764,27 +787,48 @@ private void DrawNarrativeSidebar(string heading, int activeStep)
             "¿Pensaste en el impacto sobre las demás personas?",
             "¿Te sientes conforme con este resultado?"
         };
-        float rowHeight = (height - 116f) / questions.Length;
+        bool landscape = Screen.width > Screen.height;
+        int columns = landscape ? 2 : 1;
+        int rows = Mathf.CeilToInt(questions.Length / (float)columns);
+        float gridTop = y + 98f;
+        float gridBottom = y + height - 12f;
+        float rowGap = 8f;
+        float columnGap = 8f;
+        float rowHeight = (gridBottom - gridTop - rowGap * (rows - 1)) / rows;
+        float columnWidth = (width - 48f - columnGap * (columns - 1)) / columns;
         for (int i = 0; i < questions.Length; i++)
         {
-            float rowY = y + 98f + i * rowHeight;
-            GUI.Label(new Rect(x + 24, rowY, width - 48, 34), (i + 1) + ".  " + questions[i], reflectionSmallStyle);
-            float buttonWidth = Mathf.Min(180f, (width - 80f) / 2f);
-            float buttonY = rowY + 36f;
+            int row = i / columns;
+            int column = i % columns;
+            float columnX = x + 24f + column * (columnWidth + columnGap);
+            float rowY = gridTop + row * (rowHeight + rowGap);
+            float labelHeight = Mathf.Min(34f, Mathf.Max(24f, rowHeight - 52f));
+            GUI.Label(new Rect(columnX, rowY, columnWidth, labelHeight), (i + 1) + ".  " + questions[i], reflectionSmallStyle);
+            float buttonWidth = Mathf.Min(180f, (columnWidth - 24f) / 2f);
+            float buttonY = rowY + labelHeight + 4f;
+            float answerButtonHeight = Mathf.Max(48f, Mathf.Min(64f, rowY + rowHeight - buttonY));
+            float answerX = columnX + (columnWidth - buttonWidth * 2f - 8f) / 2f;
             GUI.enabled = !reflectionSubmitted && !isSubmittingReflection;
-            if (GUI.Button(new Rect(x + 32f, buttonY, buttonWidth, 44f), "Sí", reflectionAnswers[i] == true ? reflectionSelectedButtonStyle : reflectionButtonStyle)) reflectionAnswers[i] = true;
-            if (GUI.Button(new Rect(x + 48f + buttonWidth, buttonY, buttonWidth, 44f), "No", reflectionAnswers[i] == false ? reflectionSelectedButtonStyle : reflectionButtonStyle)) reflectionAnswers[i] = false;
+            if (GUI.Button(new Rect(answerX, buttonY, buttonWidth, answerButtonHeight), "Sí", reflectionAnswers[i] == true ? reflectionSelectedButtonStyle : reflectionButtonStyle)) reflectionAnswers[i] = true;
+            if (GUI.Button(new Rect(answerX + buttonWidth + 8f, buttonY, buttonWidth, answerButtonHeight), "No", reflectionAnswers[i] == false ? reflectionSelectedButtonStyle : reflectionButtonStyle)) reflectionAnswers[i] = false;
         }
         bool complete = Array.TrueForAll(reflectionAnswers, answer => answer.HasValue);
         GUI.enabled = complete && !reflectionSubmitted && !isSubmittingReflection;
-        Rect submitRect = new Rect((Screen.width - Mathf.Min(420f, Screen.width - 48f)) / 2f, Screen.height * 0.81f, Mathf.Min(420f, Screen.width - 48f), 58f);
+        Rect submitRect = new Rect((Screen.width - Mathf.Min(420f, Screen.width - 48f)) / 2f, Screen.height * 0.82f, Mathf.Min(420f, Screen.width - 48f), 58f);
         if (GUI.Button(submitRect, reflectionSubmitted ? "REFLEXIÓN ENVIADA" : isSubmittingReflection ? "ENVIANDO…" : complete ? "ENVIAR REFLEXIÓN" : "RESPONDE LAS 4 PREGUNTAS", reflectionButtonStyle) && complete)
             StartCoroutine(SubmitReflection());
         GUI.enabled = true;
-        if (!string.IsNullOrEmpty(reflectionMessage))
-            GUI.Label(new Rect(24, Screen.height * 0.9f, Screen.width - 48, 40), reflectionMessage, reflectionSmallStyle);
+        string reflectionStatus = reflectionMessage;
         if (finalDecision == "continue")
-            GUI.Label(new Rect(24, Screen.height * 0.91f, Screen.width - 48, 40), "El docente eligió continuar. Espera la siguiente indicación.", reflectionSmallStyle);
+        {
+            if (!string.IsNullOrEmpty(reflectionStatus))
+                reflectionStatus += "\n";
+            reflectionStatus += "El docente eligió continuar. Espera la siguiente indicación.";
+        }
+        float reflectionStatusY = submitRect.yMax + 6f;
+        float reflectionStatusHeight = Mathf.Max(0f, Screen.height - reflectionStatusY - 8f);
+        if (!string.IsNullOrEmpty(reflectionStatus) && reflectionStatusHeight > 0f)
+            GUI.Label(new Rect(24f, reflectionStatusY, Screen.width - 48f, reflectionStatusHeight), reflectionStatus, reflectionSmallStyle);
     }
 
 private void DrawReflectionWaitScreen()
@@ -883,7 +927,7 @@ private void DrawReflectionWaitScreen()
         float countHeight = Mathf.Max(32f, statusStyle.CalcHeight(new GUIContent(countText), contentWidth));
         float fixedHeight = paddingY * 2f + titleHeight + descriptionHeight + statusHeight + countHeight + sectionGap * 4f;
         float buttonAreaHeight = panelHeight - fixedHeight;
-        float minimumTouchHeight = 96f;
+        float minimumTouchHeight = 48f;
         float buttonGap = sectionGap;
         bool stackButtons = screenHeight > screenWidth
             && buttonAreaHeight >= minimumTouchHeight * 2f + buttonGap;
@@ -892,7 +936,7 @@ private void DrawReflectionWaitScreen()
             : Mathf.Min(160f, buttonAreaHeight);
         // If an unusually short viewport cannot fit the preferred target, use the remaining height
         // rather than allowing the button row to collide with the status and vote-count areas.
-        buttonHeight = Mathf.Max(1f, buttonHeight);
+        buttonHeight = Mathf.Max(minimumTouchHeight, buttonHeight);
         float buttonWidth = stackButtons ? contentWidth : (contentWidth - buttonGap) / 2f;
 
         float cursorY = top + paddingY;
@@ -965,6 +1009,22 @@ private void DrawReflectionWaitScreen()
         positiveMessage = messages[next];
     }
 
+    private void ShowDecisionEncouragementIfPending()
+    {
+        if (!decisionEncouragementPending || currentStage != 4)
+            return;
+
+        decisionEncouragementPending = false;
+        ShowEncouragement();
+        positiveMessageStartedAt = Time.unscaledTime;
+    }
+
+    private bool IsEncouragementVisible()
+    {
+        return !string.IsNullOrEmpty(positiveMessage) && positiveMessageStartedAt >= 0f
+            && Time.unscaledTime - positiveMessageStartedAt < 2.5f;
+    }
+
     private string GetNeutralConsequenceText()
     {
         string consequence = selectedDecisionIndex switch
@@ -981,7 +1041,7 @@ private void DrawReflectionWaitScreen()
 
     private void DrawTransitionFeedback()
     {
-        if (!string.IsNullOrEmpty(positiveMessage) && Time.unscaledTime - transitionStartedAt < 2.5f)
+        if (IsEncouragementVisible())
             GUI.Label(new Rect(24, Screen.height * 0.83f, Screen.width - 48, Screen.height * 0.055f), positiveMessage, statusStyle);
 
         float elapsed = Time.unscaledTime - transitionStartedAt;
