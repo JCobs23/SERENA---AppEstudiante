@@ -103,7 +103,6 @@ public class NarrativeStageView : MonoBehaviour
     private GUIStyle reflectionSmallStyle;
     private float transitionStartedAt = -10f;
     private string positiveMessage = string.Empty;
-    private int previousPositiveMessage = -1;
     private AudioSource confirmationAudio;
     private AudioClip confirmationClip;
 
@@ -772,7 +771,7 @@ private void DrawNarrativeSidebar(string heading, int activeStep)
         GUI.Label(new Rect(24, 18, Screen.width - 48, 48), "Serena  ·  Tiempo de reflexión", reflectionTextStyle);
         GUI.Label(new Rect(40, Screen.height * 0.075f, Screen.width - 80, 64), "Reflexionemos sobre lo ocurrido", reflectionTextStyle);
         GUI.Label(new Rect(40, Screen.height * 0.145f, Screen.width - 80, 42),
-            "Piensa en tu decisión y en sus consecuencias para las personas involucradas.", reflectionSmallStyle);
+            GetEmotionReflectionPrompt(), reflectionSmallStyle);
 
         float width = Mathf.Min(Screen.width * 0.88f, 980f);
         float x = (Screen.width - width) / 2f;
@@ -1002,16 +1001,12 @@ private void DrawReflectionWaitScreen()
 
     private void ShowEncouragement()
     {
-        string[] messages = { "¡Buen trabajo!", "Gracias por participar.", "Tu reflexión es importante.", "Sigue pensando con calma." };
-        int next = UnityEngine.Random.Range(0, messages.Length - 1);
-        if (next >= previousPositiveMessage) next++;
-        previousPositiveMessage = next;
-        positiveMessage = messages[next];
+        positiveMessage = GetNeutralConsequenceText();
     }
 
     private void ShowDecisionEncouragementIfPending()
     {
-        if (!decisionEncouragementPending || currentStage != 4)
+        if (!decisionEncouragementPending || currentStage != 4 || !videoFinished)
             return;
 
         decisionEncouragementPending = false;
@@ -1037,6 +1032,15 @@ private void DrawReflectionWaitScreen()
         };
 
         return "Consecuencia posible: " + consequence;
+    }
+
+    private string GetEmotionReflectionPrompt()
+    {
+        if (selectedEmotionIndex < 0 || selectedEmotionIndex >= EmotionValues.Length)
+            return "No se registró una emoción para relacionarla con esta consecuencia.";
+
+        return "Seleccionaste «" + EmotionValues[selectedEmotionIndex]
+            + "». Piensa cómo se relaciona con esta consecuencia.";
     }
 
     private void DrawTransitionFeedback()
