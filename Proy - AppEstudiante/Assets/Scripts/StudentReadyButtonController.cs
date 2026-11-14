@@ -7,7 +7,6 @@ using UnityEngine.UI;
 
 public class StudentReadyButtonController : MonoBehaviour
 {
-    [SerializeField] private string serverBaseUrl = "http://127.0.0.1:5080";
 
     private Button readyButton;
     private TMP_Text buttonText;
@@ -51,7 +50,7 @@ public class StudentReadyButtonController : MonoBehaviour
         readyButton.interactable = false;
 
         string json = $"{{\"ready\":{nextReadyState.ToString().ToLower()}}}";
-        string url = $"{GetBaseUrl()}/api/sessions/{StudentSessionContext.SessionId}/students/{StudentSessionContext.StudentId}/ready";
+        string url = $"{SerenaServerConfig.BaseUrl}/api/sessions/{StudentSessionContext.SessionId}/students/{StudentSessionContext.StudentId}/ready";
 
         using var request = new UnityWebRequest(url, "POST");
         request.uploadHandler = new UploadHandlerRaw(Encoding.UTF8.GetBytes(json));
@@ -79,13 +78,6 @@ public class StudentReadyButtonController : MonoBehaviour
     {
         return !string.IsNullOrWhiteSpace(StudentSessionContext.SessionId)
             && !string.IsNullOrWhiteSpace(StudentSessionContext.StudentId);
-    }
-
-    private string GetBaseUrl()
-    {
-        return PlayerPrefs
-            .GetString("SerenaServerUrl", serverBaseUrl)
-            .TrimEnd('/');
     }
 
     private void RefreshVisuals()

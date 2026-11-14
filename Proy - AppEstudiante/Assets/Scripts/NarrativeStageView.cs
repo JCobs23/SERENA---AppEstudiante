@@ -8,7 +8,6 @@ using UnityEngine.Video;
 public class NarrativeStageView : MonoBehaviour
 {
     [SerializeField] private string videoFileName = "SerenaNarrativa.mp4";
-    [SerializeField] private string serverBaseUrl = "http://192.168.1.18:5080";
 
     private static readonly string[] EmotionValues =
         { "Curioso", "Miedo a la exclusión", "Neutral", "Confundido", "Incómodo" };
@@ -47,8 +46,6 @@ public class NarrativeStageView : MonoBehaviour
     private bool videoStarted;
     private bool videoFinished;
     private string videoError;
-    private bool decisionEncouragementPending;
-    private float positiveMessageStartedAt = -1f;
     private int generation;
     private int mediaRevision = -1;
     private int appliedMediaRevision = -1;
@@ -89,6 +86,8 @@ public class NarrativeStageView : MonoBehaviour
     private bool votingOpen;
     private bool voteSubmitted;
     private bool isSubmittingVote;
+    private bool voteLockedByConflict;
+    private string submittedVoteChoice = string.Empty;
     private int voteRound = -1;
     private int continueVotes;
     private int alternativeVotes;
@@ -104,7 +103,6 @@ public class NarrativeStageView : MonoBehaviour
     private GUIStyle reflectionTextStyle;
     private GUIStyle reflectionSmallStyle;
     private float transitionStartedAt = -10f;
-    private string positiveMessage = string.Empty;
     private AudioSource confirmationAudio;
     private AudioClip confirmationClip;
 
@@ -194,9 +192,6 @@ public class NarrativeStageView : MonoBehaviour
         if (previousStage != stage)
         {
             transitionStartedAt = Time.unscaledTime;
-            positiveMessage = string.Empty;
-            positiveMessageStartedAt = -1f;
-            decisionEncouragementPending = previousStage == 3 && stage == 4 && selectedDecisionIndex >= 0;
         }
         currentStage = stage;
         stageLabel = label ?? string.Empty;
@@ -214,6 +209,8 @@ public class NarrativeStageView : MonoBehaviour
         {
             voteRound = currentVoteRound;
             voteSubmitted = false;
+            voteLockedByConflict = false;
+            submittedVoteChoice = string.Empty;
             voteMessage = string.Empty;
         }
 
@@ -294,7 +291,6 @@ public class NarrativeStageView : MonoBehaviour
         {
             videoError = "No se pudo cargar " + activeVideoFileName + ". Revisa Assets/StreamingAssets.";
             Debug.LogWarning("Serena: no se pudo cargar el video " + activeVideoFileName + ".");
-            ShowDecisionEncouragementIfPending();
             yield break;
         }
 
@@ -307,7 +303,6 @@ public class NarrativeStageView : MonoBehaviour
         {
             if (currentGeneration == generation)
                 videoError = "No se pudo preparar el video en este dispositivo.";
-            ShowDecisionEncouragementIfPending();
             yield break;
         }
 
@@ -317,7 +312,6 @@ public class NarrativeStageView : MonoBehaviour
         if (!CreateVideoTexture(expectedStage))
         {
             videoError = "No se pudo preparar el área de video en este dispositivo.";
-            ShowDecisionEncouragementIfPending();
             yield break;
         }
 
@@ -357,7 +351,6 @@ public class NarrativeStageView : MonoBehaviour
         {
             if (string.IsNullOrEmpty(videoError))
                 videoError = "El video no pudo iniciar en este dispositivo.";
-            ShowDecisionEncouragementIfPending();
             yield break;
         }
 
@@ -429,7 +422,6 @@ public class NarrativeStageView : MonoBehaviour
     {
         videoFinished = true;
         source.Pause();
-        ShowDecisionEncouragementIfPending();
         StartCoroutine(CaptureBlurredFrame(true));
     }
 
@@ -541,7 +533,6 @@ public class NarrativeStageView : MonoBehaviour
     {
         videoError = "El video de la Narrativa inicial no es compatible con este dispositivo.";
         Debug.LogWarning("Serena: el video de la Narrativa inicial no es compatible con este dispositivo.");
-        ShowDecisionEncouragementIfPending();
     }
 
     private void StopVideo(bool preserveBlurredFrame = false)
@@ -810,7 +801,7 @@ if (currentStage == 5)
             GUI.Label(new Rect(24, Screen.height * 0.45f, Screen.width - 48, 90), videoError, statusStyle);
         else if (videoPlayer == null || !videoPlayer.isPrepared)
             GUI.Label(new Rect(24, Screen.height * 0.45f, Screen.width - 48, 60), "Preparando el video de la decisión…", statusStyle);
-        else if (videoFinished && !IsEncouragementVisible())
+        else if (videoFinished)
             GUI.Label(new Rect(24, Screen.height * 0.84f, Screen.width - 48, 48), "Video finalizado. Esperando al docente…", statusStyle);
     }
 
@@ -943,7 +934,7 @@ private void DrawReflectionWaitScreen()
         isSubmittingReflection = true;
         reflectionMessage = "Enviando reflexión…";
         string answers = string.Join(",", Array.ConvertAll(reflectionAnswers, answer => answer == true ? "yes" : "no"));
-        string baseUrl = PlayerPrefs.GetString("SerenaServerUrl", serverBaseUrl).TrimEnd('/');
+        string baseUrl = SerenaServerConfig.BaseUrl;
         string url = baseUrl + "/api/sessions/" + StudentSessionContext.SessionId
             + "/students/" + StudentSessionContext.StudentId + "/reflection";
         string json = JsonUtility.ToJson(new ReflectionRequest { answers = answers });
@@ -1029,11 +1020,19 @@ private void DrawReflectionWaitScreen()
         Rect alternativeRect = stackButtons
             ? new Rect(x + paddingX, continueRect.yMax + buttonGap, buttonWidth, buttonHeight)
             : new Rect(continueRect.xMax + buttonGap, cursorY, buttonWidth, buttonHeight);
-        GUI.enabled = !voteSubmitted && !isSubmittingVote;
-        if (GUI.Button(continueRect, "Continuar a la siguiente\nnarrativa", decisionCardStyle))
+        GUIStyle continueStyle = submittedVoteChoice == "continue" ? decisionSelectedCardStyle : decisionCardStyle;
+        GUIStyle alternativeStyle = submittedVoteChoice == "alternative" ? decisionSelectedCardStyle : decisionCardStyle;
+        GUI.enabled = !voteSubmitted && !isSubmittingVote && !voteLockedByConflict;
+        if (GUI.Button(continueRect, "Continuar a la siguiente\nnarrativa", continueStyle))
+        {
+            submittedVoteChoice = "continue";
             StartCoroutine(SubmitVote("continue"));
-        if (GUI.Button(alternativeRect, "Explorar una decisión\nalternativa", decisionCardStyle))
+        }
+        if (GUI.Button(alternativeRect, "Explorar una decisión\nalternativa", alternativeStyle))
+        {
+            submittedVoteChoice = "alternative";
             StartCoroutine(SubmitVote("alternative"));
+        }
         GUI.enabled = true;
 
         cursorY = alternativeRect.yMax + sectionGap;
@@ -1046,13 +1045,13 @@ private void DrawReflectionWaitScreen()
 
     private IEnumerator SubmitVote(string choice)
     {
-        if (isSubmittingVote || voteSubmitted || string.IsNullOrWhiteSpace(StudentSessionContext.SessionId)
+        if (isSubmittingVote || voteSubmitted || voteLockedByConflict || string.IsNullOrWhiteSpace(StudentSessionContext.SessionId)
             || string.IsNullOrWhiteSpace(StudentSessionContext.StudentId))
             yield break;
 
         isSubmittingVote = true;
         voteMessage = string.Empty;
-        string baseUrl = PlayerPrefs.GetString("SerenaServerUrl", serverBaseUrl).TrimEnd('/');
+        string baseUrl = SerenaServerConfig.BaseUrl;
         string url = baseUrl + "/api/sessions/" + StudentSessionContext.SessionId
             + "/students/" + StudentSessionContext.StudentId + "/vote";
         string json = JsonUtility.ToJson(new VoteRequest { choice = choice });
@@ -1070,35 +1069,18 @@ private void DrawReflectionWaitScreen()
         }
         else if (request.responseCode == 409)
         {
-            voteSubmitted = true;
+            // A conflict says the round closed or a vote may already exist; it is not proof
+            // that this request was accepted, so keep the message distinct from success.
+            voteLockedByConflict = true;
+            submittedVoteChoice = string.Empty;
             voteMessage = "La votación cerró o tu voto ya fue registrado.";
         }
         else
         {
+            submittedVoteChoice = string.Empty;
             voteMessage = "No se pudo enviar el voto. Comprueba la conexión e inténtalo de nuevo.";
         }
         isSubmittingVote = false;
-    }
-
-    private void ShowEncouragement()
-    {
-        positiveMessage = GetNeutralConsequenceText();
-    }
-
-    private void ShowDecisionEncouragementIfPending()
-    {
-        if (!decisionEncouragementPending || currentStage != 4 || !videoFinished)
-            return;
-
-        decisionEncouragementPending = false;
-        ShowEncouragement();
-        positiveMessageStartedAt = Time.unscaledTime;
-    }
-
-    private bool IsEncouragementVisible()
-    {
-        return !string.IsNullOrEmpty(positiveMessage) && positiveMessageStartedAt >= 0f
-            && Time.unscaledTime - positiveMessageStartedAt < 2.5f;
     }
 
     private string GetNeutralConsequenceText()
@@ -1126,9 +1108,6 @@ private void DrawReflectionWaitScreen()
 
     private void DrawTransitionFeedback()
     {
-        if (IsEncouragementVisible())
-            GUI.Label(new Rect(24, Screen.height * 0.83f, Screen.width - 48, Screen.height * 0.055f), positiveMessage, statusStyle);
-
         float elapsed = Time.unscaledTime - transitionStartedAt;
         const float duration = 0.6f;
         if (elapsed < 0f || elapsed >= duration) return;
@@ -1170,7 +1149,7 @@ private void DrawReflectionWaitScreen()
 
         isSubmittingInteraction = true;
         interactionMessage = "Enviando respuesta…";
-        string baseUrl = PlayerPrefs.GetString("SerenaServerUrl", serverBaseUrl).TrimEnd('/');
+        string baseUrl = SerenaServerConfig.BaseUrl;
         string url = baseUrl + "/api/sessions/" + StudentSessionContext.SessionId
             + "/students/" + StudentSessionContext.StudentId + "/" + kind;
         string json = JsonUtility.ToJson(new InteractionRequest { value = value });

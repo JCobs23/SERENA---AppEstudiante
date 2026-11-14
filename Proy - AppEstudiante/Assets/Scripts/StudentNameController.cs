@@ -98,7 +98,6 @@ public class StudentNameController : MonoBehaviour
     [SerializeField] private TMP_InputField inputFieldName;
     [SerializeField] private Button continueButton;
     [SerializeField] private TMP_Text statusText;
-    [SerializeField] private string serverBaseUrl = "http://127.0.0.1:5080";
 
     [Header("Panel Navigation")]
     [SerializeField] private GameObject currentPanel;
@@ -186,7 +185,7 @@ public class StudentNameController : MonoBehaviour
     private IEnumerator RegisterStudentAndContinue()
     {
         SetStatus("Registrando tu ingreso...");
-        string baseUrl = PlayerPrefs.GetString("SerenaServerUrl", serverBaseUrl).TrimEnd('/');
+        string baseUrl = SerenaServerConfig.BaseUrl;
         string sessionId = StudentSessionContext.SessionId;
         string identityKey = studentName.Trim().ToLowerInvariant();
         string storageKey = "Serena.StudentId." + sessionId + "." + identityKey;

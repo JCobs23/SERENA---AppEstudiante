@@ -20,7 +20,6 @@ public sealed class StudentRosterController : MonoBehaviour
     [SerializeField] private Color notReadyColor = new(0.85f, 0.10f, 0.15f, 1f);
 
     [Header("Conexión")]
-    [SerializeField] private string serverBaseUrl = "http://127.0.0.1:5080";
     [SerializeField] private float refreshSeconds = 1f;
 
     [Serializable]
@@ -74,7 +73,7 @@ public sealed class StudentRosterController : MonoBehaviour
         if (string.IsNullOrWhiteSpace(sessionCode))
             yield break;
 
-        string baseUrl = PlayerPrefs.GetString("SerenaServerUrl", serverBaseUrl).TrimEnd('/');
+        string baseUrl = SerenaServerConfig.BaseUrl;
         string studentId = StudentSessionContext.StudentId;
         if (string.IsNullOrWhiteSpace(studentId))
             yield break;

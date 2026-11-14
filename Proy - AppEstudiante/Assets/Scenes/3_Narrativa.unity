@@ -149,7 +149,6 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::NarrativeStageView
   videoFileName: SerenaNarrativa.mp4
-  serverBaseUrl: http://192.168.1.18:5080
 --- !u!4 &1384219274
 Transform:
   m_ObjectHideFlags: 0

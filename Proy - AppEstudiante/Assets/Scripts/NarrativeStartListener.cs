@@ -38,7 +38,6 @@ public class NarrativeStartListener : MonoBehaviour
         public int voteRound;
     }
 
-    [SerializeField] private string serverBaseUrl = "http://127.0.0.1:5080";
     [SerializeField] private string codeEntrySceneName = "1_IngresoCodigo";
     [SerializeField] private string narrativeSceneName = "3_Narrativa";
     [SerializeField] private float checkSeconds = 0.5f;
@@ -137,7 +136,7 @@ private IEnumerator SynchronizeNarrative()
                     ResetConnectionState(sessionId);
 
                 BeginSessionSyncAttempt();
-                string baseUrl = PlayerPrefs.GetString("SerenaServerUrl", serverBaseUrl).TrimEnd('/');
+                string baseUrl = SerenaServerConfig.BaseUrl;
                 string url = baseUrl + "/api/sessions/" + sessionId;
                 using var request = UnityWebRequest.Get(url);
                 request.timeout = 5;
@@ -282,7 +281,7 @@ private IEnumerator SynchronizeNarrative()
             if (!string.IsNullOrWhiteSpace(StudentSessionContext.SessionId)
                 && !string.IsNullOrWhiteSpace(StudentSessionContext.StudentId))
             {
-                string baseUrl = PlayerPrefs.GetString("SerenaServerUrl", serverBaseUrl).TrimEnd('/');
+                string baseUrl = SerenaServerConfig.BaseUrl;
                 string url = baseUrl + "/api/sessions/" + StudentSessionContext.SessionId
                     + "/students/" + StudentSessionContext.StudentId + "/heartbeat";
                 using var request = new UnityWebRequest(url, "POST");
@@ -443,7 +442,7 @@ private IEnumerator ReportIntroductionCompleted()
             && !string.IsNullOrWhiteSpace(StudentSessionContext.SessionId)
             && !string.IsNullOrWhiteSpace(StudentSessionContext.StudentId))
         {
-            string baseUrl = PlayerPrefs.GetString("SerenaServerUrl", serverBaseUrl).TrimEnd('/');
+            string baseUrl = SerenaServerConfig.BaseUrl;
             string url = baseUrl + "/api/sessions/" + StudentSessionContext.SessionId
                 + "/students/" + StudentSessionContext.StudentId + "/intro-complete";
             using var request = new UnityWebRequest(url, "POST");
