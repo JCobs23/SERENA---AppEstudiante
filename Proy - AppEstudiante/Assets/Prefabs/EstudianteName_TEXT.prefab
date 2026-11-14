@@ -68,7 +68,7 @@ MonoBehaviour:
   m_OnCullStateChanged:
     m_PersistentCalls:
       m_Calls: []
-  m_text: 'Estudiante
+  m_text: 'Student
 
 '
   m_isRightToLeft: 0

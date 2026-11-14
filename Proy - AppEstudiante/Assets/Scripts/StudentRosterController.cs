@@ -8,6 +8,7 @@ public sealed class StudentRosterController : MonoBehaviour
 {
     [Header("Panel")]
     [SerializeField] private TMP_Text connectedStudentsCount;
+    [SerializeField] private TMP_Text groupParticipationText;
     [SerializeField] private Transform studentListContainer;
     [SerializeField] private StudentRowView studentRowPrefab;
 
@@ -18,7 +19,6 @@ public sealed class StudentRosterController : MonoBehaviour
     [SerializeField] private Color notReadyColor = new(0.85f, 0.10f, 0.15f, 1f);
 
     [Header("Conexión")]
-    [SerializeField] private string serverBaseUrl = "http://127.0.0.1:5080";
     [SerializeField] private float refreshSeconds = 1f;
 
     [Serializable]
@@ -98,7 +98,7 @@ public sealed class StudentRosterController : MonoBehaviour
         if (string.IsNullOrWhiteSpace(sessionCode))
             yield break;
 
-        string baseUrl = PlayerPrefs.GetString("SerenaServerUrl", serverBaseUrl).TrimEnd('/');
+        string baseUrl = SerenaServerConfig.BaseUrl;
         string studentId = StudentSessionContext.StudentId;
         if (string.IsNullOrWhiteSpace(studentId))
             yield break;
@@ -128,12 +128,14 @@ public sealed class StudentRosterController : MonoBehaviour
         ClearRows();
 
         int connectedCount = 0;
+        int readyCount = 0;
         if (response?.students != null)
         {
             foreach (RosterStudent student in response.students)
             {
                 if (student == null || !student.connected) continue;
                 connectedCount++;
+                if (student.ready) readyCount++;
 
                 StudentRowView row = Instantiate(studentRowPrefab, studentListContainer, false);
                 row.Configure(student.name, student.ready, readyTexture, notReadyTexture, readyColor, notReadyColor);
@@ -142,6 +144,8 @@ public sealed class StudentRosterController : MonoBehaviour
 
         if (connectedStudentsCount != null)
             connectedStudentsCount.text = connectedCount.ToString();
+        if (groupParticipationText != null)
+            groupParticipationText.text = $"In the group: {connectedCount} connected · {readyCount} ready.";
     }
 
     private void ClearRows()

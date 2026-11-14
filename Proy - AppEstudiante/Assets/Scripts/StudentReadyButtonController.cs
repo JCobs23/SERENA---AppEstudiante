@@ -7,8 +7,6 @@ using UnityEngine.UI;
 
 public class StudentReadyButtonController : MonoBehaviour
 {
-    [SerializeField] private string serverBaseUrl = "http://127.0.0.1:5080";
-    [SerializeField] private float heartbeatSeconds = 3f;
 
     private Button readyButton;
     private TMP_Text buttonText;
@@ -27,13 +25,9 @@ public class StudentReadyButtonController : MonoBehaviour
             return;
         }
 
+        StudentButtonDepthStyle.Apply(readyButton);
         readyButton.onClick.AddListener(ToggleReady);
         RefreshVisuals();
-    }
-
-    private void Start()
-    {
-        StartCoroutine(HeartbeatLoop());
     }
 
     private void OnDestroy()
@@ -56,7 +50,7 @@ public class StudentReadyButtonController : MonoBehaviour
         readyButton.interactable = false;
 
         string json = $"{{\"ready\":{nextReadyState.ToString().ToLower()}}}";
-        string url = $"{GetBaseUrl()}/api/sessions/{StudentSessionContext.SessionId}/students/{StudentSessionContext.StudentId}/ready";
+        string url = $"{SerenaServerConfig.BaseUrl}/api/sessions/{StudentSessionContext.SessionId}/students/{StudentSessionContext.StudentId}/ready";
 
         using var request = new UnityWebRequest(url, "POST");
         request.uploadHandler = new UploadHandlerRaw(Encoding.UTF8.GetBytes(json));
@@ -80,36 +74,10 @@ public class StudentReadyButtonController : MonoBehaviour
         readyButton.interactable = true;
     }
 
-    private IEnumerator HeartbeatLoop()
-    {
-        while (true)
-        {
-            if (HasStudentSession())
-            {
-                string url = $"{GetBaseUrl()}/api/sessions/{StudentSessionContext.SessionId}/students/{StudentSessionContext.StudentId}/heartbeat";
-
-                using var request = new UnityWebRequest(url, "POST");
-                request.downloadHandler = new DownloadHandlerBuffer();
-                request.timeout = 5;
-
-                yield return request.SendWebRequest();
-            }
-
-            yield return new WaitForSecondsRealtime(heartbeatSeconds);
-        }
-    }
-
     private bool HasStudentSession()
     {
         return !string.IsNullOrWhiteSpace(StudentSessionContext.SessionId)
             && !string.IsNullOrWhiteSpace(StudentSessionContext.StudentId);
-    }
-
-    private string GetBaseUrl()
-    {
-        return PlayerPrefs
-            .GetString("SerenaServerUrl", serverBaseUrl)
-            .TrimEnd('/');
     }
 
     private void RefreshVisuals()
@@ -120,6 +88,6 @@ public class StudentReadyButtonController : MonoBehaviour
         readyButton.image.color = isReady ? green : red;
 
         if (buttonText != null)
-            buttonText.text = isReady ? "I'M READY" : "¿Ready?";
+            buttonText.text = isReady ? "I'm ready" : "Ready?";
     }
 }

@@ -852,7 +852,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: ad654271ea2c4784fac1e3262c375bd4, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::NarrativeStartListener
-  serverBaseUrl: http://192.168.80.17:5080
   codeEntrySceneName: 1_IngresoCodigo
   narrativeSceneName: 3_Narrativa
   checkSeconds: 0.5
@@ -1743,8 +1742,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 899f071cc567e33449a425d47c6e2186, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::StudentReadyButtonController
-  serverBaseUrl: http://192.168.80.17:5080
-  heartbeatSeconds: 3
 --- !u!114 &610350702
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -1873,7 +1870,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::StudentNameController
   inputFieldName: {fileID: 444615055}
   continueButton: {fileID: 1544150763}
-  serverBaseUrl: http://192.168.80.17:5080
+  statusText: {fileID: 0}
   currentPanel: {fileID: 160927261}
   nextPanel: {fileID: 32065040}
   sceneToLoad: 
@@ -2143,7 +2140,7 @@ MonoBehaviour:
   m_OnCullStateChanged:
     m_PersistentCalls:
       m_Calls: []
-  m_text: "\xBFReady?"
+  m_text: Ready?
   m_isRightToLeft: 0
   m_fontAsset: {fileID: 11400000, guid: d5fa572af2bcb194e8771dc735f8a580, type: 2}
   m_sharedMaterial: {fileID: -773264750278159110, guid: d5fa572af2bcb194e8771dc735f8a580, type: 2}
@@ -2315,13 +2312,13 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::StudentRosterController
   connectedStudentsCount: {fileID: 1966172546}
+  groupParticipationText: {fileID: 0}
   studentListContainer: {fileID: 27987978}
   studentRowPrefab: {fileID: 1636721562528745651, guid: e4aa23feec8b66d43b9dff9795e87bdd, type: 3}
   readyTexture: {fileID: 10912, guid: 0000000000000000f000000000000000, type: 0}
   notReadyTexture: {fileID: 10912, guid: 0000000000000000f000000000000000, type: 0}
   readyColor: {r: 0.05, g: 0.75, b: 0.48, a: 1}
   notReadyColor: {r: 0.85, g: 0.1, b: 0.15, a: 1}
-  serverBaseUrl: http://192.168.80.17:5080
   refreshSeconds: 1
 --- !u!114 &1008569489
 MonoBehaviour:
@@ -2716,7 +2713,7 @@ MonoBehaviour:
   m_OnCullStateChanged:
     m_PersistentCalls:
       m_Calls: []
-  m_text: Conectados
+  m_text: Connected
   m_isRightToLeft: 0
   m_fontAsset: {fileID: 11400000, guid: 5d26d108e13985b4e9b3c00a29d0500b, type: 2}
   m_sharedMaterial: {fileID: -5664703494168189658, guid: 5d26d108e13985b4e9b3c00a29d0500b, type: 2}
@@ -3844,7 +3841,7 @@ MonoBehaviour:
   m_OnCullStateChanged:
     m_PersistentCalls:
       m_Calls: []
-  m_text: Lista de Estudiantes
+  m_text: Student list
   m_isRightToLeft: 0
   m_fontAsset: {fileID: 11400000, guid: 5d26d108e13985b4e9b3c00a29d0500b, type: 2}
   m_sharedMaterial: {fileID: -5664703494168189658, guid: 5d26d108e13985b4e9b3c00a29d0500b, type: 2}
