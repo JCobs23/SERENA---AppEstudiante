@@ -26,6 +26,7 @@ public class StudentReadyButtonController : MonoBehaviour
             return;
         }
 
+        StudentButtonDepthStyle.Apply(readyButton);
         readyButton.onClick.AddListener(ToggleReady);
         RefreshVisuals();
     }

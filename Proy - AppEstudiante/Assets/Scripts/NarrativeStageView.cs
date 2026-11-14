@@ -77,6 +77,8 @@ public class NarrativeStageView : MonoBehaviour
     private Texture2D bannerTexture;
     private Texture2D emotionCardTexture;
     private Texture2D emotionSelectedCardTexture;
+    private Texture2D emotionDisabledCardTexture;
+    private Texture2D emotionDisabledSelectedCardTexture;
     private Texture2D decisionPressedCardTexture;
     private readonly Texture2D[] emotionImages = new Texture2D[5];
     private int selectedEmotionIndex = -1;
@@ -659,7 +661,13 @@ if (currentStage == 5)
             if (emotionImages[i] != null)
             {
                 GUI.DrawTexture(card, emotionImages[i], ScaleMode.ScaleToFit, true);
-                if (pressing)
+                if (isSubmittingInteraction)
+                {
+                    GUI.color = new Color(0.62f, 0.62f, 0.62f, 0.45f);
+                    GUI.DrawTexture(card, Texture2D.whiteTexture);
+                    GUI.color = Color.white;
+                }
+                else if (pressing)
                 {
                     GUI.color = new Color(0f, 0f, 0f, 0.14f);
                     GUI.DrawTexture(card, Texture2D.whiteTexture);
@@ -732,7 +740,8 @@ if (currentStage == 5)
         Rect confirm = new Rect((contentWidth - Mathf.Min(contentWidth * 0.56f, 500f)) / 2f,
             confirmY, Mathf.Min(contentWidth * 0.56f, 500f), Mathf.Clamp(Screen.height * 0.075f, 58f, 84f));
         GUI.enabled = selectedDecisionIndex >= 0 && !isSubmittingInteraction;
-        if (GUI.Button(confirm, isSubmittingInteraction ? "ENVIANDO…" : "CONFIRMAR DECISIÓN", decisionSelectedCardStyle))
+        GUIStyle confirmStyle = selectedDecisionIndex >= 0 ? decisionSelectedCardStyle : emotionCardStyle;
+        if (GUI.Button(confirm, isSubmittingInteraction ? "ENVIANDO…" : "CONFIRMAR DECISIÓN", confirmStyle))
             StartCoroutine(SubmitInteraction("decision", DecisionValues[selectedDecisionIndex]));
         GUI.enabled = true;
         DrawNarrativeSidebar("Momento de tomar una decisión", 3);
@@ -1260,6 +1269,10 @@ private void DrawReflectionWaitScreen()
             emotionCardTexture = CreateRoundedCardTexture(new Color(0.96f, 0.93f, 0.89f, 0.98f), new Color(0.72f, 0.67f, 0.6f, 1f));
         if (emotionSelectedCardTexture == null)
             emotionSelectedCardTexture = CreateRoundedCardTexture(new Color(1f, 0.98f, 0.93f, 1f), new Color(0.2f, 0.7f, 0.48f, 1f));
+        if (emotionDisabledCardTexture == null)
+            emotionDisabledCardTexture = CreateRoundedCardTexture(new Color(0.78f, 0.78f, 0.76f, 1f), new Color(0.57f, 0.56f, 0.53f, 1f));
+        if (emotionDisabledSelectedCardTexture == null)
+            emotionDisabledSelectedCardTexture = CreateRoundedCardTexture(new Color(0.79f, 0.84f, 0.8f, 1f), new Color(0.52f, 0.63f, 0.55f, 1f));
 
         string[] emotionImageNames = { "curiosidad", "fuera", "neutro", "confundido", "incomodo" };
         for (int i = 0; i < emotionImages.Length; i++)
@@ -1271,6 +1284,8 @@ private void DrawReflectionWaitScreen()
         emotionCardStyle = new GUIStyle(GUI.skin.button);
         emotionCardStyle.normal.background = emotionCardTexture;
         emotionCardStyle.hover.background = emotionCardTexture;
+        emotionCardStyle.disabled.background = emotionDisabledCardTexture;
+        emotionCardStyle.disabled.textColor = new Color(0.42f, 0.42f, 0.4f, 1f);
         if (decisionPressedCardTexture == null)
             decisionPressedCardTexture = CreateRoundedCardTexture(new Color(0.47f, 0.31f, 0.28f, 1f), new Color(0.28f, 0.18f, 0.17f, 1f));
         emotionCardStyle.active.background = decisionPressedCardTexture;
@@ -1281,6 +1296,8 @@ private void DrawReflectionWaitScreen()
         emotionSelectedCardStyle.normal.background = emotionSelectedCardTexture;
         emotionSelectedCardStyle.hover.background = emotionSelectedCardTexture;
         emotionSelectedCardStyle.active.background = decisionPressedCardTexture;
+        emotionSelectedCardStyle.disabled.background = emotionDisabledSelectedCardTexture;
+        emotionSelectedCardStyle.disabled.textColor = new Color(0.28f, 0.43f, 0.34f, 1f);
         emotionCardStyle.fontSize = 18;
         emotionCardStyle.fontStyle = FontStyle.Bold;
         emotionCardStyle.alignment = TextAnchor.MiddleCenter;
@@ -1295,6 +1312,8 @@ private void DrawReflectionWaitScreen()
         emotionPressedCardStyle.normal.background = decisionPressedCardTexture;
         emotionPressedCardStyle.hover.background = decisionPressedCardTexture;
         emotionPressedCardStyle.active.background = decisionPressedCardTexture;
+        emotionPressedCardStyle.disabled.background = emotionDisabledCardTexture;
+        emotionPressedCardStyle.disabled.textColor = new Color(0.42f, 0.42f, 0.4f, 1f);
 
         decisionCardStyle = new GUIStyle(emotionCardStyle);
         decisionCardStyle.fontSize = Mathf.Clamp(Screen.width / 34, 22, 38);
@@ -1305,21 +1324,29 @@ private void DrawReflectionWaitScreen()
         decisionCardStyle.hover.textColor = decisionCardStyle.normal.textColor;
         decisionCardStyle.active.textColor = Color.white;
         decisionCardStyle.active.background = decisionPressedCardTexture;
+        decisionCardStyle.disabled.background = emotionDisabledCardTexture;
+        decisionCardStyle.disabled.textColor = new Color(0.42f, 0.42f, 0.4f, 1f);
 
         decisionSelectedCardStyle = new GUIStyle(decisionCardStyle);
         decisionSelectedCardStyle.normal.background = emotionSelectedCardTexture;
         decisionSelectedCardStyle.hover.background = emotionSelectedCardTexture;
         decisionSelectedCardStyle.active.background = decisionPressedCardTexture;
+        decisionSelectedCardStyle.disabled.background = emotionDisabledSelectedCardTexture;
+        decisionSelectedCardStyle.disabled.textColor = new Color(0.28f, 0.43f, 0.34f, 1f);
 
         reflectionButtonStyle = new GUIStyle(emotionCardStyle);
         reflectionButtonStyle.fontSize = Mathf.Clamp(Screen.width / 75, 16, 24);
         reflectionButtonStyle.wordWrap = true;
         reflectionButtonStyle.normal.textColor = new Color(0.16f, 0.11f, 0.2f);
+        reflectionButtonStyle.disabled.background = emotionDisabledCardTexture;
+        reflectionButtonStyle.disabled.textColor = new Color(0.42f, 0.42f, 0.4f, 1f);
         reflectionSelectedButtonStyle = new GUIStyle(reflectionButtonStyle);
         reflectionSelectedButtonStyle.normal.background = emotionSelectedCardTexture;
         reflectionSelectedButtonStyle.hover.background = emotionSelectedCardTexture;
         reflectionSelectedButtonStyle.active.background = decisionPressedCardTexture;
         reflectionSelectedButtonStyle.normal.textColor = new Color(0.1f, 0.42f, 0.27f);
+        reflectionSelectedButtonStyle.disabled.background = emotionDisabledSelectedCardTexture;
+        reflectionSelectedButtonStyle.disabled.textColor = new Color(0.28f, 0.43f, 0.34f, 1f);
 
     }
 
@@ -1356,6 +1383,10 @@ private void DrawReflectionWaitScreen()
             Destroy(emotionCardTexture);
         if (emotionSelectedCardTexture != null)
             Destroy(emotionSelectedCardTexture);
+        if (emotionDisabledCardTexture != null)
+            Destroy(emotionDisabledCardTexture);
+        if (emotionDisabledSelectedCardTexture != null)
+            Destroy(emotionDisabledSelectedCardTexture);
         if (decisionPressedCardTexture != null)
             Destroy(decisionPressedCardTexture);
     }

@@ -28,12 +28,23 @@ public class SessionCodeEntryController : MonoBehaviour
             {
                 int digit = i == 9 ? 0 : i + 1;
                 if (numberButtons[i] != null)
+                {
+                    StudentButtonDepthStyle.Apply(numberButtons[i]);
                     numberButtons[i].onClick.AddListener(() => AddDigit(digit));
+                }
             }
         }
 
-        if (deleteButton != null) deleteButton.onClick.AddListener(DeleteDigit);
-        if (joinButton != null) joinButton.onClick.AddListener(JoinSession);
+        if (deleteButton != null)
+        {
+            StudentButtonDepthStyle.Apply(deleteButton);
+            deleteButton.onClick.AddListener(DeleteDigit);
+        }
+        if (joinButton != null)
+        {
+            StudentButtonDepthStyle.Apply(joinButton);
+            joinButton.onClick.AddListener(JoinSession);
+        }
         RefreshDisplay();
     }
 
@@ -111,8 +122,8 @@ public class SessionCodeEntryController : MonoBehaviour
         {
             if (statusText != null)
                 statusText.text = request.responseCode == 404
-                    ? "El código no existe o la sesión ya expiró."
-                    : "No se pudo conectar con Serena. Revisa la red y la dirección del servidor.";
+                    ? "Código inexistente o sesión vencida."
+                    : "Sin conexión. Revisa la red.";
             if (joinButton != null) joinButton.interactable = true;
             isValidatingSession = false;
             yield break;
@@ -127,5 +138,26 @@ public class SessionCodeEntryController : MonoBehaviour
         foreach (char character in value)
             if (character < '0' || character > '9') return false;
         return true;
+    }
+}
+
+/// <summary>Applies consistent pressed, focused, and disabled feedback to student UI buttons.</summary>
+public static class StudentButtonDepthStyle
+{
+    public static void Apply(Button button)
+    {
+        if (button == null)
+            return;
+
+        ColorBlock colors = button.colors;
+        colors.normalColor = Color.white;
+        colors.highlightedColor = new Color(0.9f, 0.9f, 0.9f, 1f);
+        colors.pressedColor = new Color(0.62f, 0.62f, 0.62f, 1f);
+        colors.selectedColor = new Color(0.86f, 0.86f, 0.86f, 1f);
+        colors.disabledColor = new Color(0.62f, 0.62f, 0.62f, 0.62f);
+        colors.colorMultiplier = 1f;
+        colors.fadeDuration = 0.08f;
+        button.colors = colors;
+        button.transition = Selectable.Transition.ColorTint;
     }
 }

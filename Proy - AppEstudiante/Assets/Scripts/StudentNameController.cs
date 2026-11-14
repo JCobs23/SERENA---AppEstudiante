@@ -129,6 +129,7 @@ public class StudentNameController : MonoBehaviour
 
         if (continueButton != null)
         {
+            StudentButtonDepthStyle.Apply(continueButton);
             continueButtonText = continueButton.GetComponentInChildren<TMP_Text>();
             if (continueButtonText != null)
                 originalContinueButtonText = continueButtonText.text;
