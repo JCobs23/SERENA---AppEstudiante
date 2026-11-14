@@ -18,6 +18,7 @@ public class SessionCodeEntryController : MonoBehaviour
     [SerializeField] private string serverBaseUrl = "http://127.0.0.1:5080";
 
     private string code = string.Empty;
+    private bool isValidatingSession;
 
     private void Start()
     {
@@ -82,18 +83,25 @@ public class SessionCodeEntryController : MonoBehaviour
 
     private void JoinSession()
     {
+        if (isValidatingSession)
+            return;
+
         if (code.Length != CodeLength || !IsNumeric(code))
         {
             if (statusText != null) statusText.text = "Ingresa un código válido de 6 dígitos.";
             return;
         }
 
+        isValidatingSession = true;
         if (joinButton != null) joinButton.interactable = false;
         StartCoroutine(ValidateSessionAndContinue());
     }
 
     private IEnumerator ValidateSessionAndContinue()
     {
+        if (statusText != null)
+            statusText.text = "Buscando la sesión...";
+
         string baseUrl = PlayerPrefs.GetString("SerenaServerUrl", serverBaseUrl).TrimEnd('/');
         using var request = UnityWebRequest.Get($"{baseUrl}/api/sessions/{code}");
         request.timeout = 8;
@@ -106,6 +114,7 @@ public class SessionCodeEntryController : MonoBehaviour
                     ? "El código no existe o la sesión ya expiró."
                     : "No se pudo conectar con Serena. Revisa la red y la dirección del servidor.";
             if (joinButton != null) joinButton.interactable = true;
+            isValidatingSession = false;
             yield break;
         }
 

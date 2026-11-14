@@ -425,7 +425,7 @@ MonoBehaviour:
   m_OnCullStateChanged:
     m_PersistentCalls:
       m_Calls: []
-  m_text: Your name
+  m_text: Tu nombre
   m_isRightToLeft: 0
   m_fontAsset: {fileID: 11400000, guid: 65646351bd4728b4894888aaea7a952c, type: 2}
   m_sharedMaterial: {fileID: 1137468373}
@@ -673,7 +673,7 @@ MonoBehaviour:
   m_OnCullStateChanged:
     m_PersistentCalls:
       m_Calls: []
-  m_text: To continue to today's session, enter your first and last name
+  m_text: Para unirte, escribe tu nombre y apellido.
   m_isRightToLeft: 0
   m_fontAsset: {fileID: 11400000, guid: 65646351bd4728b4894888aaea7a952c, type: 2}
   m_sharedMaterial: {fileID: 1089758720}
@@ -2477,6 +2477,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::StudentNameController
   inputFieldName: {fileID: 444615055}
   continueButton: {fileID: 1544150763}
+  statusText: {fileID: 142137896}
   serverBaseUrl: http://192.168.1.18:5080
   currentPanel: {fileID: 160927261}
   nextPanel: {fileID: 1903418360}
@@ -2675,7 +2676,7 @@ MonoBehaviour:
   m_OnCullStateChanged:
     m_PersistentCalls:
       m_Calls: []
-  m_text: Esta experiencia se realiza en grupo.
+  m_text: Espera con calma el inicio.
   m_isRightToLeft: 0
   m_fontAsset: {fileID: 11400000, guid: 65646351bd4728b4894888aaea7a952c, type: 2}
   m_sharedMaterial: {fileID: 707369812}
@@ -2884,7 +2885,7 @@ MonoBehaviour:
   m_OnCullStateChanged:
     m_PersistentCalls:
       m_Calls: []
-  m_text: "\xBFReady?"
+  m_text: "\xBFEst\xE1s listo/a?"
   m_isRightToLeft: 0
   m_fontAsset: {fileID: 11400000, guid: d5fa572af2bcb194e8771dc735f8a580, type: 2}
   m_sharedMaterial: {fileID: 1356774960}
@@ -3430,7 +3431,7 @@ RectTransform:
   m_AnchorMin: {x: 0.5, y: 0.5}
   m_AnchorMax: {x: 0.5, y: 0.5}
   m_AnchoredPosition: {x: 292.42816, y: 207.78455}
-  m_SizeDelta: {x: 200, y: 50}
+  m_SizeDelta: {x: 400, y: 50}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!114 &1151671134
 MonoBehaviour:
@@ -3452,7 +3453,7 @@ MonoBehaviour:
   m_OnCullStateChanged:
     m_PersistentCalls:
       m_Calls: []
-  m_text: Welcome!
+  m_text: ¡Te damos la bienvenida!
   m_isRightToLeft: 0
   m_fontAsset: {fileID: 11400000, guid: d9fbd6c65a5e4724ab7e4d4385f62e47, type: 2}
   m_sharedMaterial: {fileID: 314137156}
@@ -4671,7 +4672,7 @@ MonoBehaviour:
   m_OnCullStateChanged:
     m_PersistentCalls:
       m_Calls: []
-  m_text: Write your name here...
+  m_text: Escribe tu nombre aquí...
   m_isRightToLeft: 0
   m_fontAsset: {fileID: 11400000, guid: d9fbd6c65a5e4724ab7e4d4385f62e47, type: 2}
   m_sharedMaterial: {fileID: 280612047}
@@ -4991,7 +4992,7 @@ MonoBehaviour:
   m_OnCullStateChanged:
     m_PersistentCalls:
       m_Calls: []
-  m_text: "Continue \u2192"
+  m_text: "Continuar \u2192"
   m_isRightToLeft: 0
   m_fontAsset: {fileID: 11400000, guid: d5fa572af2bcb194e8771dc735f8a580, type: 2}
   m_sharedMaterial: {fileID: 1485530650}

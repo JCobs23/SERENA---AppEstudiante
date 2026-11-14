@@ -97,6 +97,7 @@ public class StudentNameController : MonoBehaviour
     [Header("UI References")]
     [SerializeField] private TMP_InputField inputFieldName;
     [SerializeField] private Button continueButton;
+    [SerializeField] private TMP_Text statusText;
     [SerializeField] private string serverBaseUrl = "http://127.0.0.1:5080";
 
     [Header("Panel Navigation")]
@@ -106,9 +107,17 @@ public class StudentNameController : MonoBehaviour
 
     private string studentName = string.Empty;
     private string originalPlaceholder;
+    private string originalInstructions;
+    private TMP_Text continueButtonText;
+    private string originalContinueButtonText;
+    private bool isRegistering;
+    private bool sessionExpired;
 
     private void Start()
     {
+        if (statusText != null)
+            originalInstructions = statusText.text;
+
         if (inputFieldName != null)
         {
             inputFieldName.characterLimit = MaxNameLength;
@@ -120,6 +129,9 @@ public class StudentNameController : MonoBehaviour
 
         if (continueButton != null)
         {
+            continueButtonText = continueButton.GetComponentInChildren<TMP_Text>();
+            if (continueButtonText != null)
+                originalContinueButtonText = continueButtonText.text;
             continueButton.interactable = false;
             continueButton.onClick.AddListener(OnContinuePressed);
         }
@@ -137,24 +149,42 @@ public class StudentNameController : MonoBehaviour
     private void ValidateInput(string input)
     {
         studentName = (input ?? string.Empty).Trim();
+        if (statusText != null && !isRegistering)
+            statusText.text = originalInstructions;
+        if (inputFieldName != null && inputFieldName.placeholder is TMP_Text placeholder
+            && !string.IsNullOrEmpty(originalPlaceholder))
+            placeholder.text = originalPlaceholder;
+
         bool isValid = studentName.Length >= MinNameLength && studentName.Length <= MaxNameLength;
 
         if (continueButton != null)
-            continueButton.interactable = isValid;
+            continueButton.interactable = isValid && !isRegistering;
     }
 
     private void OnContinuePressed()
     {
+        if (sessionExpired)
+        {
+            SceneManager.LoadScene("1_IngresoCodigo");
+            return;
+        }
+
+        if (isRegistering)
+            return;
+
         ValidateInput(inputFieldName != null ? inputFieldName.text : studentName);
         if (studentName.Length < MinNameLength || studentName.Length > MaxNameLength)
             return;
 
+        isRegistering = true;
+        if (inputFieldName != null) inputFieldName.interactable = false;
         if (continueButton != null) continueButton.interactable = false;
         StartCoroutine(RegisterStudentAndContinue());
     }
 
     private IEnumerator RegisterStudentAndContinue()
     {
+        SetStatus("Registrando tu ingreso...");
         string baseUrl = PlayerPrefs.GetString("SerenaServerUrl", serverBaseUrl).TrimEnd('/');
         string sessionId = StudentSessionContext.SessionId;
         string identityKey = studentName.Trim().ToLowerInvariant();
@@ -177,18 +207,29 @@ public class StudentNameController : MonoBehaviour
 
         if (request.result != UnityWebRequest.Result.Success)
         {
-            ShowConnectionMessage(request.responseCode == 404
-                ? "La sesión expiró. Ingresa nuevamente el código."
-                : "No se pudo conectar con Serena. Revisa la red y vuelve a intentar.");
-            if (continueButton != null) continueButton.interactable = true;
+            if (request.responseCode == 404)
+            {
+                isRegistering = false;
+                sessionExpired = true;
+                if (inputFieldName != null)
+                    inputFieldName.interactable = false;
+                if (continueButton != null)
+                    continueButton.interactable = true;
+                if (continueButtonText != null)
+                    continueButtonText.text = "Volver a ingresar el código";
+                SetStatus("La sesión venció. Vuelve a ingresar el código.");
+            }
+            else
+            {
+                FinishRegistrationWithMessage("No pudimos conectar. Revisa la red e inténtalo de nuevo.");
+            }
             yield break;
         }
 
         var response = JsonUtility.FromJson<JoinStudentResponse>(request.downloadHandler.text);
         if (response == null || string.IsNullOrWhiteSpace(response.studentId))
         {
-            ShowConnectionMessage("El servidor respondió con un dato inválido. Intenta nuevamente.");
-            if (continueButton != null) continueButton.interactable = true;
+            FinishRegistrationWithMessage("La respuesta no fue válida. Inténtalo de nuevo.");
             yield break;
         }
 
@@ -213,8 +254,26 @@ public class StudentNameController : MonoBehaviour
         if (nextPanel != null) nextPanel.SetActive(true);
     }
 
-    private void ShowConnectionMessage(string message)
+    private void FinishRegistrationWithMessage(string message)
     {
+        isRegistering = false;
+        if (inputFieldName != null)
+            inputFieldName.interactable = true;
+        if (continueButton != null)
+            continueButton.interactable = studentName.Length >= MinNameLength && studentName.Length <= MaxNameLength;
+        if (continueButtonText != null)
+            continueButtonText.text = originalContinueButtonText;
+        SetStatus(message);
+    }
+
+    private void SetStatus(string message)
+    {
+        if (statusText != null)
+        {
+            statusText.text = message;
+            return;
+        }
+
         if (inputFieldName != null && inputFieldName.placeholder is TMP_Text placeholder)
             placeholder.text = message;
         else

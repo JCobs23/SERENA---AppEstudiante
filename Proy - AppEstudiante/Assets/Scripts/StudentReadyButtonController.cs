@@ -95,6 +95,6 @@ public class StudentReadyButtonController : MonoBehaviour
         readyButton.image.color = isReady ? green : red;
 
         if (buttonText != null)
-            buttonText.text = isReady ? "I'M READY" : "¿Ready?";
+            buttonText.text = isReady ? "Estoy listo/a" : "¿Estás listo/a?";
     }
 }
