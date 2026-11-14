@@ -8,7 +8,6 @@ using UnityEngine.UI;
 public class StudentReadyButtonController : MonoBehaviour
 {
     [SerializeField] private string serverBaseUrl = "http://127.0.0.1:5080";
-    [SerializeField] private float heartbeatSeconds = 3f;
 
     private Button readyButton;
     private TMP_Text buttonText;
@@ -29,11 +28,6 @@ public class StudentReadyButtonController : MonoBehaviour
 
         readyButton.onClick.AddListener(ToggleReady);
         RefreshVisuals();
-    }
-
-    private void Start()
-    {
-        StartCoroutine(HeartbeatLoop());
     }
 
     private void OnDestroy()
@@ -78,25 +72,6 @@ public class StudentReadyButtonController : MonoBehaviour
 
         isSending = false;
         readyButton.interactable = true;
-    }
-
-    private IEnumerator HeartbeatLoop()
-    {
-        while (true)
-        {
-            if (HasStudentSession())
-            {
-                string url = $"{GetBaseUrl()}/api/sessions/{StudentSessionContext.SessionId}/students/{StudentSessionContext.StudentId}/heartbeat";
-
-                using var request = new UnityWebRequest(url, "POST");
-                request.downloadHandler = new DownloadHandlerBuffer();
-                request.timeout = 5;
-
-                yield return request.SendWebRequest();
-            }
-
-            yield return new WaitForSecondsRealtime(heartbeatSeconds);
-        }
     }
 
     private bool HasStudentSession()

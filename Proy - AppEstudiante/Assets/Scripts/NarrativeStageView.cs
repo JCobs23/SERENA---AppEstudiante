@@ -106,6 +106,8 @@ public class NarrativeStageView : MonoBehaviour
     private AudioSource confirmationAudio;
     private AudioClip confirmationClip;
 
+    public bool IsFullscreenVideoPlaying => videoPlayer != null && videoPlayer.isPlaying;
+
     public void SetNarrativeState(
         int stage,
         string label,

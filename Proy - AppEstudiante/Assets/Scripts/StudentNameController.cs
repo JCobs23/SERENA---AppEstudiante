@@ -195,21 +195,6 @@ public class StudentNameController : MonoBehaviour
         PlayerPrefs.SetString(storageKey, response.studentId);
         PlayerPrefs.Save();
         ContinueToActivity(response.studentId);
-        StudentHeartbeatRunner.Run(HeartbeatLoop(sessionId, response.studentId));
-    }
-
-    private IEnumerator HeartbeatLoop(string sessionId, string studentId)
-    {
-        string baseUrl = PlayerPrefs.GetString("SerenaServerUrl", serverBaseUrl).TrimEnd('/');
-        while (StudentSessionContext.SessionId == sessionId && StudentSessionContext.StudentId == studentId)
-        {
-            yield return new WaitForSecondsRealtime(5f);
-            using var request = new UnityWebRequest(baseUrl + "/api/sessions/" + sessionId + "/students/" + studentId + "/heartbeat", "POST");
-            request.downloadHandler = new DownloadHandlerBuffer();
-            request.timeout = 5;
-            yield return request.SendWebRequest();
-            if (request.responseCode == 404) yield break;
-        }
     }
 
     private void ContinueToActivity(string studentId)
@@ -281,27 +266,4 @@ public class StudentData
     public string studentName;
     public string studentId;
     public string sessionId;
-}
-
-public sealed class StudentHeartbeatRunner : MonoBehaviour
-{
-    private static StudentHeartbeatRunner instance;
-
-    public static void Run(IEnumerator routine)
-    {
-        if (instance == null)
-        {
-            var host = new GameObject(nameof(StudentHeartbeatRunner));
-            instance = host.AddComponent<StudentHeartbeatRunner>();
-            DontDestroyOnLoad(host);
-        }
-
-        instance.StartCoroutine(routine);
-    }
-
-    private void OnDestroy()
-    {
-        if (instance == this)
-            instance = null;
-    }
 }

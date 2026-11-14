@@ -2131,7 +2131,6 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::StudentReadyButtonController
   serverBaseUrl: http://192.168.1.18:5080
-  heartbeatSeconds: 3
 --- !u!114 &610350702
 MonoBehaviour:
   m_ObjectHideFlags: 0
