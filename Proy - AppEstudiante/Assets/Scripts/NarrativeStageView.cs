@@ -108,6 +108,35 @@ public class NarrativeStageView : MonoBehaviour
 
     public bool IsFullscreenVideoPlaying => videoPlayer != null && videoPlayer.isPlaying;
 
+    private void Update()
+    {
+        ResizeVideoTextureForCurrentScreen();
+    }
+
+    private void ResizeVideoTextureForCurrentScreen()
+    {
+        if (videoPlayer == null || videoTexture == null || !videoPlayer.isPlaying)
+            return;
+
+        int width = Mathf.Max(640, Screen.width);
+        int height = Mathf.Max(360, Screen.height);
+        if (videoTexture.width == width && videoTexture.height == height)
+            return;
+
+        RenderTexture resizedTexture = new RenderTexture(width, height, 0, RenderTextureFormat.ARGB32);
+        if (!resizedTexture.Create())
+        {
+            Destroy(resizedTexture);
+            return;
+        }
+
+        RenderTexture previousTexture = videoTexture;
+        videoTexture = resizedTexture;
+        videoPlayer.targetTexture = resizedTexture;
+        previousTexture.Release();
+        Destroy(previousTexture);
+    }
+
     public void SetNarrativeState(
         int stage,
         string label,
@@ -918,11 +947,11 @@ private void DrawReflectionWaitScreen()
         float contentWidth = panelWidth - paddingX * 2f;
         float sectionGap = Mathf.Clamp(smallestDimension * 0.018f, 8f, 16f);
         float titleHeight = Mathf.Max(36f, titleStyle.CalcHeight(new GUIContent("Votación final"), contentWidth));
-        string description = "Vota si quieres continuar a la siguiente narrativa o explorar una decisión alternativa. El docente tomará la decisión final.";
+        string description = "Tu voto es individual. Los conteos reflejan la participación del grupo; el docente toma la decisión final.";
         float descriptionHeight = descriptionStyle.CalcHeight(new GUIContent(description), contentWidth);
 
         string status = voteSubmitted ? "Decisión enviada" : isSubmittingVote ? "Enviando voto…" : voteMessage;
-        string countText = "Votos del grupo: " + continueVotes + " continuar · " + alternativeVotes + " explorar alternativa";
+        string countText = "Participación del grupo: " + continueVotes + " continuar · " + alternativeVotes + " explorar alternativa";
         float statusHeight = Mathf.Max(32f, statusStyle.CalcHeight(
             new GUIContent("No se pudo enviar el voto. Comprueba la conexión e inténtalo de nuevo."), contentWidth));
         float countHeight = Mathf.Max(32f, statusStyle.CalcHeight(new GUIContent(countText), contentWidth));

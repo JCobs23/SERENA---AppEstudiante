@@ -8,6 +8,7 @@ public sealed class StudentRosterController : MonoBehaviour
 {
     [Header("Panel")]
     [SerializeField] private TMP_Text connectedStudentsCount;
+    [SerializeField] private TMP_Text groupParticipationText;
     [SerializeField] private Transform studentListContainer;
     [SerializeField] private StudentRowView studentRowPrefab;
     [SerializeField] private int maxStudentsToShow = 12;
@@ -42,6 +43,13 @@ public sealed class StudentRosterController : MonoBehaviour
 
     private void OnEnable()
     {
+        if (connectedStudentsCount == null && groupParticipationText == null
+            && (studentListContainer == null || studentRowPrefab == null))
+        {
+            enabled = false;
+            return;
+        }
+
         refreshRoutine = StartCoroutine(RefreshLoop());
     }
 
@@ -96,6 +104,7 @@ public sealed class StudentRosterController : MonoBehaviour
         ClearRows();
 
         int connectedCount = 0;
+        int readyCount = 0;
         int rowsCreated = 0;
         if (response?.students != null)
         {
@@ -103,8 +112,10 @@ public sealed class StudentRosterController : MonoBehaviour
             {
                 if (student == null || !student.connected) continue;
                 connectedCount++;
+                if (student.ready) readyCount++;
 
-                if (rowsCreated >= Mathf.Max(0, maxStudentsToShow)) continue;
+                if (studentListContainer == null || studentRowPrefab == null
+                    || rowsCreated >= Mathf.Max(0, maxStudentsToShow)) continue;
                 StudentRowView row = Instantiate(studentRowPrefab, studentListContainer);
                 row.Configure(student.name, student.ready, readyTexture, notReadyTexture, readyColor, notReadyColor);
                 rowsCreated++;
@@ -113,6 +124,8 @@ public sealed class StudentRosterController : MonoBehaviour
 
         if (connectedStudentsCount != null)
             connectedStudentsCount.text = connectedCount.ToString();
+        if (groupParticipationText != null)
+            groupParticipationText.text = $"En el grupo: {connectedCount} conectados · {readyCount} listos.";
     }
 
     private void ClearRows()

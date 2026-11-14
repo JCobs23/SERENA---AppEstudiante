@@ -2675,7 +2675,7 @@ MonoBehaviour:
   m_OnCullStateChanged:
     m_PersistentCalls:
       m_Calls: []
-  m_text: Waiting for the other participants...
+  m_text: Esta experiencia se realiza en grupo.
   m_isRightToLeft: 0
   m_fontAsset: {fileID: 11400000, guid: 65646351bd4728b4894888aaea7a952c, type: 2}
   m_sharedMaterial: {fileID: 707369812}
@@ -3013,6 +3013,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::StudentRosterController
   connectedStudentsCount: {fileID: 1966172546}
+  groupParticipationText: {fileID: 885023714}
   studentListContainer: {fileID: 27987978}
   studentRowPrefab: {fileID: 1636721562528745651, guid: e4aa23feec8b66d43b9dff9795e87bdd, type: 3}
   maxStudentsToShow: 8
@@ -4105,7 +4106,7 @@ MonoBehaviour:
   m_OnCullStateChanged:
     m_PersistentCalls:
       m_Calls: []
-  m_text: 'Connected Students:'
+  m_text: 'Conectados:'
   m_isRightToLeft: 0
   m_fontAsset: {fileID: 11400000, guid: 5d26d108e13985b4e9b3c00a29d0500b, type: 2}
   m_sharedMaterial: {fileID: 159050401}

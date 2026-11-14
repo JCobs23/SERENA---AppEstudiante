@@ -89,6 +89,35 @@ public class NarrativeStartListener : MonoBehaviour
         StartCoroutine(HeartbeatLoop());
     }
 
+    private void Update()
+    {
+        ResizeVideoTextureForCurrentScreen();
+    }
+
+    private void ResizeVideoTextureForCurrentScreen()
+    {
+        if (videoPlayer == null || videoTexture == null || !videoPlayer.isPlaying)
+            return;
+
+        int width = Mathf.Max(640, Screen.width);
+        int height = Mathf.Max(360, Screen.height);
+        if (videoTexture.width == width && videoTexture.height == height)
+            return;
+
+        RenderTexture resizedTexture = new RenderTexture(width, height, 0, RenderTextureFormat.ARGB32);
+        if (!resizedTexture.Create())
+        {
+            Destroy(resizedTexture);
+            return;
+        }
+
+        RenderTexture previousTexture = videoTexture;
+        videoTexture = resizedTexture;
+        videoPlayer.targetTexture = resizedTexture;
+        previousTexture.Release();
+        Destroy(previousTexture);
+    }
+
 private IEnumerator SynchronizeNarrative()
     {
         while (true)
