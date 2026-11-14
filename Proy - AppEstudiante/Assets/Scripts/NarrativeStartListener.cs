@@ -99,15 +99,15 @@ public class NarrativeStartListener : MonoBehaviour
         if (videoPlayer == null || videoTexture == null || !videoPlayer.isPlaying)
             return;
 
-        int width = Mathf.Max(640, Screen.width);
-        int height = Mathf.Max(360, Screen.height);
-        if (videoTexture.width == width && videoTexture.height == height)
+        Vector2Int size = GetFullscreenVideoTextureSize();
+        if (videoTexture.width == size.x && videoTexture.height == size.y)
             return;
 
-        RenderTexture resizedTexture = new RenderTexture(width, height, 0, RenderTextureFormat.ARGB32);
+        RenderTexture resizedTexture = new RenderTexture(size.x, size.y, 0, RenderTextureFormat.ARGB32);
         if (!resizedTexture.Create())
         {
             Destroy(resizedTexture);
+            Debug.LogWarning("Serena: no se pudo reajustar la textura de la introducción para la pantalla actual.");
             return;
         }
 
@@ -116,6 +116,14 @@ public class NarrativeStartListener : MonoBehaviour
         videoPlayer.targetTexture = resizedTexture;
         previousTexture.Release();
         Destroy(previousTexture);
+    }
+
+    private static Vector2Int GetFullscreenVideoTextureSize()
+    {
+        float width = Mathf.Max(1f, Screen.width);
+        float height = Mathf.Max(1f, Screen.height);
+        float scale = Mathf.Max(1f, 640f / width, 360f / height);
+        return new Vector2Int(Mathf.CeilToInt(width * scale), Mathf.CeilToInt(height * scale));
     }
 
 private IEnumerator SynchronizeNarrative()
@@ -325,8 +333,16 @@ private IEnumerator PlayIntroduction()
         if (generation != narrativeGeneration || !StudentSessionContext.NarrativeStarted)
             yield break;
 
-        videoTexture = new RenderTexture(Mathf.Max(640, Screen.width), Mathf.Max(360, Screen.height), 0, RenderTextureFormat.ARGB32);
-        videoTexture.Create();
+        Vector2Int introTextureSize = GetFullscreenVideoTextureSize();
+        RenderTexture introTexture = new RenderTexture(
+            introTextureSize.x, introTextureSize.y, 0, RenderTextureFormat.ARGB32);
+        if (!introTexture.Create())
+        {
+            Destroy(introTexture);
+            ShowIntroError("No se pudo preparar el video en este dispositivo.");
+            yield break;
+        }
+        videoTexture = introTexture;
         videoPlayer = gameObject.AddComponent<VideoPlayer>();
         videoPlayer.playOnAwake = false;
         videoPlayer.source = VideoSource.Url;
@@ -486,8 +502,9 @@ private IEnumerator ReportIntroductionCompleted()
         }
 
         // La vista de las etapas con contenido interactivo pertenece a 3_Narrativa.
-        if (currentStage == 1 || currentStage == 2 || currentStage == 3)
+        if (currentStage == 1 || currentStage == 2 || currentStage == 3 || currentStage == 4)
         {
+            // NarrativeStageView owns the video and controls for these stages.
             DrawConnectionIndicator();
             return;
         }

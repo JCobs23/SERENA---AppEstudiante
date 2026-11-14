@@ -120,15 +120,15 @@ public class NarrativeStageView : MonoBehaviour
         if (videoPlayer == null || videoTexture == null || !videoPlayer.isPlaying)
             return;
 
-        int width = Mathf.Max(640, Screen.width);
-        int height = Mathf.Max(360, Screen.height);
-        if (videoTexture.width == width && videoTexture.height == height)
+        Vector2Int size = GetVideoTextureSize(currentStage);
+        if (videoTexture.width == size.x && videoTexture.height == size.y)
             return;
 
-        RenderTexture resizedTexture = new RenderTexture(width, height, 0, RenderTextureFormat.ARGB32);
+        RenderTexture resizedTexture = new RenderTexture(size.x, size.y, 0, RenderTextureFormat.ARGB32);
         if (!resizedTexture.Create())
         {
             Destroy(resizedTexture);
+            Debug.LogWarning("Serena: no se pudo reajustar el área de video para la pantalla actual.");
             return;
         }
 
@@ -137,6 +137,41 @@ public class NarrativeStageView : MonoBehaviour
         videoPlayer.targetTexture = resizedTexture;
         previousTexture.Release();
         Destroy(previousTexture);
+    }
+
+    private Rect GetVideoViewport(int stage)
+    {
+        // Keep the stage heading above the live image; stage 1 also reserves its timeline strip.
+        float topReserved = stage == 1 ? 184f : 156f;
+        float bottomReserved = stage == 1
+            // DrawTimeline's panel begins 31 px above its bar; retain an 8 px visual gap.
+            ? Mathf.Clamp(Screen.height * 0.055f, 28f, 58f) + 39f
+            : 12f;
+        return new Rect(0f, topReserved, Mathf.Max(1f, Screen.width),
+            Mathf.Max(1f, Screen.height - topReserved - bottomReserved));
+    }
+
+    private Vector2Int GetVideoTextureSize(int stage)
+    {
+        Rect viewport = GetVideoViewport(stage);
+        float width = Mathf.Max(1f, viewport.width);
+        float height = Mathf.Max(1f, viewport.height);
+        float scale = Mathf.Max(1f, 640f / width, 360f / height);
+        return new Vector2Int(Mathf.CeilToInt(width * scale), Mathf.CeilToInt(height * scale));
+    }
+
+    private bool CreateVideoTexture(int stage)
+    {
+        Vector2Int size = GetVideoTextureSize(stage);
+        RenderTexture texture = new RenderTexture(size.x, size.y, 0, RenderTextureFormat.ARGB32);
+        if (!texture.Create())
+        {
+            Destroy(texture);
+            return false;
+        }
+
+        videoTexture = texture;
+        return true;
     }
 
     public void SetNarrativeState(
@@ -279,8 +314,13 @@ public class NarrativeStageView : MonoBehaviour
         if (currentGeneration != generation || currentStage != expectedStage)
             yield break;
 
-        videoTexture = new RenderTexture(Mathf.Max(640, Screen.width), Mathf.Max(360, Screen.height), 0, RenderTextureFormat.ARGB32);
-        videoTexture.Create();
+        if (!CreateVideoTexture(expectedStage))
+        {
+            videoError = "No se pudo preparar el área de video en este dispositivo.";
+            ShowDecisionEncouragementIfPending();
+            yield break;
+        }
+
         videoPlayer = gameObject.AddComponent<VideoPlayer>();
         videoPlayer.playOnAwake = false;
         videoPlayer.source = VideoSource.Url;
@@ -417,7 +457,7 @@ public class NarrativeStageView : MonoBehaviour
             return null;
 
         int width = Mathf.Clamp(Screen.width / 8, 96, 320);
-        int height = Mathf.Max(54, Mathf.RoundToInt(width * Screen.height / (float)Mathf.Max(1, Screen.width)));
+        int height = Mathf.Max(54, Mathf.RoundToInt(width * videoTexture.height / (float)Mathf.Max(1, videoTexture.width)));
         RenderTexture sampleTexture = RenderTexture.GetTemporary(width, height, 0, RenderTextureFormat.ARGB32);
         RenderTexture previousTarget = RenderTexture.active;
         Texture2D sample = null;
@@ -573,10 +613,11 @@ if (currentStage == 5)
         GUI.DrawTexture(new Rect(0, 0, Screen.width, Screen.height), Texture2D.blackTexture);
         GUI.color = Color.white;
 
+        Rect videoViewport = GetVideoViewport(1);
         if ((videoFinished || mediaPaused) && blurredEndFrame != null)
-            GUI.DrawTexture(new Rect(0, 0, Screen.width, Screen.height), blurredEndFrame, ScaleMode.ScaleToFit);
+            GUI.DrawTexture(videoViewport, blurredEndFrame, ScaleMode.ScaleToFit);
         else if (videoTexture != null && videoPlayer != null && (videoPlayer.isPlaying || mediaPaused))
-            GUI.DrawTexture(new Rect(0, 0, Screen.width, Screen.height), videoTexture, ScaleMode.ScaleToFit);
+            GUI.DrawTexture(videoViewport, videoTexture, ScaleMode.ScaleToFit);
 
         float width = Mathf.Min(Screen.width - 40, 1200);
         float x = (Screen.width - width) / 2f;
@@ -755,9 +796,9 @@ if (currentStage == 5)
         GUI.color = Color.white;
 
         if (videoFinished && blurredEndFrame != null)
-            GUI.DrawTexture(new Rect(0, 0, Screen.width, Screen.height), blurredEndFrame, ScaleMode.ScaleToFit);
+            GUI.DrawTexture(GetVideoViewport(4), blurredEndFrame, ScaleMode.ScaleToFit);
         else if (videoTexture != null && videoPlayer != null)
-            GUI.DrawTexture(new Rect(0, 0, Screen.width, Screen.height), videoTexture, ScaleMode.ScaleToFit);
+            GUI.DrawTexture(GetVideoViewport(4), videoTexture, ScaleMode.ScaleToFit);
 
         float width = Mathf.Min(Screen.width - 40, 1200);
         float x = (Screen.width - width) / 2f;
