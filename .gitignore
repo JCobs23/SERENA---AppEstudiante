@@ -73,3 +73,6 @@ sysinfo.txt
 
 # Git LFS placeholder (if you use LFS, track large asset types in .gitattributes)
 # Example: *.psd filter=lfs diff=lfs merge=lfs -text
+
+# Archivos de compilación de Android (CMake/Gradle)
+.utmp/
