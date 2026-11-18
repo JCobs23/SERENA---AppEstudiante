@@ -8,14 +8,29 @@ using UnityEngine.Video;
 public class NarrativeStageView : MonoBehaviour
 {
     [SerializeField] private string videoFileName = "SerenaNarrativa.mp4";
-    [SerializeField] private string serverBaseUrl = "http://192.168.1.18:5080";
 
     private static readonly string[] EmotionValues =
-        { "Curioso", "Miedo a la exclusión", "Neutral", "Confundido", "Incómodo" };
+        { "Curious", "Fear of exclusion", "Neutral", "Confused", "Uncomfortable" };
     private static readonly string[] DecisionValues =
-        { "Dialogar directamente", "Evitar involucrarse", "Difundir el rumor", "Cambiar el tema" };
-    private static readonly string[] DecisionLabels =
-        { "Direct Dialogue", "Avoid Involvement", "Spread the Rumor", "Change the Topic" };
+        { "Talk directly", "Avoid getting involved", "Spread the rumor", "Change the subject" };
+    // Etapa 4: cada tablet reproduce la consecuencia de la decisión que eligió ese estudiante.
+    // Mismo orden que DecisionValues.
+    private static readonly string[] DecisionVideoFiles =
+    {
+        "Decision_DialogarDirectamente.mp4",
+        "Decision_EvitarInvolucrarse.mp4",
+        "Decision_DifundirRumor.mp4",
+        "Decision_CambiarTema.mp4"
+    };
+    // H.U. 7.1.3: mensaje breve y neutral que aparece al terminar la consecuencia.
+    // Mismo orden que DecisionValues.
+    private static readonly string[] ConsequenceShortMessages =
+    {
+        "Talking directly opened a space to clear up what happened and listen to the people involved.",
+        "By not stepping in, the situation went on without a conversation and each person read it their own way.",
+        "The rumor reached more people, and those involved may have felt exposed.",
+        "Changing the subject stopped the conversation, but what happened was never cleared up."
+    };
 
     [Serializable]
     private class InteractionRequest
@@ -28,16 +43,7 @@ public class NarrativeStageView : MonoBehaviour
     {
         public string choice;
     }
-    private static readonly string[] DecisionVideoFiles =
-    {
-        "Decision_DialogarDirectamente.mp4",
-        "Decision_EvitarInvolucrarse.mp4",
-        "Decision_DifundirRumor.mp4",
-        "Decision_CambiarTema.mp4"
-    };
-
-    
-[Serializable]
+    [Serializable]
     private class ReflectionRequest
     {
         public string answers;
@@ -56,6 +62,7 @@ public class NarrativeStageView : MonoBehaviour
     private bool pauseBlurCapturePending;
     private double mediaPositionSeconds;
     private string mediaCommand = string.Empty;
+    private int volumePercent = 100;
     private VideoPlayer videoPlayer;
     private RenderTexture videoTexture;
     private Texture2D blurredEndFrame;
@@ -77,7 +84,15 @@ public class NarrativeStageView : MonoBehaviour
     private Texture2D bannerTexture;
     private Texture2D emotionCardTexture;
     private Texture2D emotionSelectedCardTexture;
+    private Texture2D emotionDisabledCardTexture;
+    private Texture2D emotionDisabledSelectedCardTexture;
     private Texture2D decisionPressedCardTexture;
+    private GUIStyle disabledCardStyle;
+    private GUIStyle blockedDecisionTextStyle;
+    private GUIStyle blockedDecisionTagStyle;
+    private GUIStyle consequenceTitleStyle;
+    private GUIStyle consequenceTextStyle;
+    private readonly bool[] blockedDecisions = new bool[4];
     private readonly Texture2D[] emotionImages = new Texture2D[5];
     private int selectedEmotionIndex = -1;
     private int pressedEmotionIndex = -1;
@@ -87,6 +102,8 @@ public class NarrativeStageView : MonoBehaviour
     private bool votingOpen;
     private bool voteSubmitted;
     private bool isSubmittingVote;
+    private bool voteLockedByConflict;
+    private string submittedVoteChoice = string.Empty;
     private int voteRound = -1;
     private int continueVotes;
     private int alternativeVotes;
@@ -102,10 +119,93 @@ public class NarrativeStageView : MonoBehaviour
     private GUIStyle reflectionTextStyle;
     private GUIStyle reflectionSmallStyle;
     private float transitionStartedAt = -10f;
-    private string positiveMessage = string.Empty;
-    private int previousPositiveMessage = -1;
+    // H.U. 10.x (Edwin): línea de tiempo, menú de progreso y mensajes positivos por etapa.
+    private StudentProgressView progressView;
     private AudioSource confirmationAudio;
     private AudioClip confirmationClip;
+
+    // Lo usa NarrativeStartListener para ocultar el indicador de conexión sobre el video.
+    public bool IsFullscreenVideoPlaying => videoPlayer != null && videoPlayer.isPlaying;
+
+    // H.U. 9.3.1: el servidor envía las decisiones más votadas en rondas anteriores.
+    public void SetBlockedDecisions(string[] values)
+    {
+        for (int i = 0; i < blockedDecisions.Length; i++)
+            blockedDecisions[i] = values != null && Array.IndexOf(values, DecisionValues[i]) >= 0;
+
+        if (selectedDecisionIndex >= 0 && IsDecisionBlocked(selectedDecisionIndex) && currentStage == 3)
+            selectedDecisionIndex = -1;
+    }
+
+    private bool IsDecisionBlocked(int index) =>
+        index >= 0 && index < blockedDecisions.Length && blockedDecisions[index];
+
+    private bool HasBlockedDecisions() => Array.IndexOf(blockedDecisions, true) >= 0;
+
+    private void Update()
+    {
+        ResizeVideoTextureForCurrentScreen();
+    }
+
+    // H.U. 5.1.2 (Bryan): el área del video se ajusta si la tablet cambia de orientación.
+    private void ResizeVideoTextureForCurrentScreen()
+    {
+        if (videoPlayer == null || videoTexture == null || !videoPlayer.isPlaying)
+            return;
+
+        Vector2Int size = GetVideoTextureSize(currentStage);
+        if (videoTexture.width == size.x && videoTexture.height == size.y)
+            return;
+
+        RenderTexture resizedTexture = new RenderTexture(size.x, size.y, 0, RenderTextureFormat.ARGB32);
+        if (!resizedTexture.Create())
+        {
+            Destroy(resizedTexture);
+            Debug.LogWarning("Serena: no se pudo reajustar el área de video para la pantalla actual.");
+            return;
+        }
+
+        RenderTexture previousTexture = videoTexture;
+        videoTexture = resizedTexture;
+        videoPlayer.targetTexture = resizedTexture;
+        previousTexture.Release();
+        Destroy(previousTexture);
+    }
+
+    private Rect GetVideoViewport(int stage)
+    {
+        if (stage != 4)
+            return new Rect(0f, 0f, Mathf.Max(1f, Screen.width), Mathf.Max(1f, Screen.height));
+
+        // Etapa 4: deja libre el encabezado y la línea de tiempo del video.
+        const float topReserved = 156f;
+        float bottomReserved = Mathf.Clamp(Screen.height * 0.055f, 28f, 58f) + 39f;
+        return new Rect(0f, topReserved, Mathf.Max(1f, Screen.width),
+            Mathf.Max(1f, Screen.height - topReserved - bottomReserved));
+    }
+
+    private Vector2Int GetVideoTextureSize(int stage)
+    {
+        Rect viewport = GetVideoViewport(stage);
+        float width = Mathf.Max(1f, viewport.width);
+        float height = Mathf.Max(1f, viewport.height);
+        float scale = Mathf.Max(1f, 640f / width, 360f / height);
+        return new Vector2Int(Mathf.CeilToInt(width * scale), Mathf.CeilToInt(height * scale));
+    }
+
+    private bool CreateVideoTexture(int stage)
+    {
+        Vector2Int size = GetVideoTextureSize(stage);
+        RenderTexture texture = new RenderTexture(size.x, size.y, 0, RenderTextureFormat.ARGB32);
+        if (!texture.Create())
+        {
+            Destroy(texture);
+            return false;
+        }
+
+        videoTexture = texture;
+        return true;
+    }
 
     public void SetNarrativeState(
         int stage,
@@ -120,18 +220,27 @@ public class NarrativeStageView : MonoBehaviour
         int alternativeVoteCount,
         string mode,
         string decision,
-        int currentVoteRound
+        int currentVoteRound,
+        int volume = 100
     )
     {
+        volumePercent = Mathf.Clamp(volume, 0, 100);
         int previousStage = currentStage;
         if (previousStage != stage && previousStage > 0 && stage > 1)
-        {
             transitionStartedAt = Time.unscaledTime;
-            ShowEncouragement();
+
+        if (progressView == null)
+        {
+            progressView = GetComponent<StudentProgressView>();
+            if (progressView == null)
+                progressView = gameObject.AddComponent<StudentProgressView>();
+            progressView.Initialize(this);
         }
+        progressView.UpdateStage(stage, label,
+            exploringAlternative: stage == 3 && previousStage > 3 && HasBlockedDecisions());
         currentStage = stage;
-        stageLabel = StudentSessionContext.TranslateStageLabel(stage);
-        stageDescription = StudentSessionContext.TranslateStageDescription(stage);
+        stageLabel = label ?? string.Empty;
+        stageDescription = description ?? string.Empty;
         mediaPaused = paused;
         mediaPositionSeconds = positionSeconds;
         mediaRevision = revision;
@@ -145,6 +254,8 @@ public class NarrativeStageView : MonoBehaviour
         {
             voteRound = currentVoteRound;
             voteSubmitted = false;
+            voteLockedByConflict = false;
+            submittedVoteChoice = string.Empty;
             voteMessage = string.Empty;
         }
 
@@ -166,7 +277,7 @@ public class NarrativeStageView : MonoBehaviour
             interactionMessage = string.Empty;
         }
 
-        if ((previousStage == 2 || previousStage == 3) && stage != 2 && stage != 3 && blurredEndFrame != null)
+        if (stage == 0 && blurredEndFrame != null)
         {
             Destroy(blurredEndFrame);
             blurredEndFrame = null;
@@ -175,38 +286,72 @@ public class NarrativeStageView : MonoBehaviour
         if (stage == 1 && !videoStarted)
         {
             videoStarted = true;
-            StartCoroutine(PrepareAndPlayVideo(videoFileName, 1));
+            StartCoroutine(PrepareBlurredPreview());
         }
         else if (stage == 4 && previousStage != 4)
         {
+            if (videoStarted)
+                StopVideo(true);
             if (selectedDecisionIndex >= 0 && selectedDecisionIndex < DecisionVideoFiles.Length)
             {
                 videoStarted = true;
-                StartCoroutine(PrepareAndPlayVideo(DecisionVideoFiles[selectedDecisionIndex], 4));
+                StartCoroutine(PrepareDecisionVideo(DecisionVideoFiles[selectedDecisionIndex]));
             }
             else
             {
-                videoError = "No decision was recorded to play its video.";
-                Debug.LogWarning("Serena: Stage 4 began without a decision selected on this device.");
+                videoError = "No decision was recorded on this tablet, so there is no video to show.";
+                Debug.LogWarning("Serena: la etapa 4 comenzó sin una decisión seleccionada en este dispositivo.");
             }
         }
-        
         else if (stage != 1 && stage != 4 && videoStarted)
         {
             if (stage == 2 && blurredEndFrame == null && videoTexture != null)
                 blurredEndFrame = CreateBlurredSnapshot();
-            StopVideo(stage == 2);
+            // Al salir de la etapa 4 se conserva el último fotograma borroso de la consecuencia.
+            StopVideo(stage == 2 || previousStage == 4);
         }
 
         ApplyMediaState();
     }
 
-    private IEnumerator PrepareAndPlayVideo(string selectedVideoFile, int expectedStage)
+    private IEnumerator PrepareBlurredPreview()
     {
         int currentGeneration = generation;
-        string activeVideoFileName = string.IsNullOrWhiteSpace(selectedVideoFile) ? videoFileName : selectedVideoFile;
+        yield return StartCoroutine(PrepareVideoPlayer(videoFileName, 1, false));
+        if (currentGeneration != generation || currentStage != 1 || videoPlayer == null || !videoPlayer.isPrepared)
+            yield break;
+
+        // El video completo se reproduce en la proyección web del docente.
+        // En la tablet solo se decodifica un fotograma para mostrarlo borroso.
+        videoPlayer.Play();
+        yield return new WaitForSecondsRealtime(0.2f);
+        if (currentGeneration != generation || videoPlayer == null || currentStage != 1)
+            yield break;
+
+        videoPlayer.Pause();
+        yield return new WaitForEndOfFrame();
+        blurredEndFrame = CreateBlurredSnapshot();
+        videoPlayer.Stop();
+    }
+
+    private IEnumerator PrepareDecisionVideo(string decisionVideoFile)
+    {
+        int currentGeneration = generation;
+        yield return StartCoroutine(PrepareVideoPlayer(decisionVideoFile, 4, true));
+        if (currentGeneration != generation || currentStage != 4 || videoPlayer == null || !videoPlayer.isPrepared)
+            yield break;
+
+        // El docente controla pausa, ±5 s y volumen desde la proyección.
+        ApplyMediaState();
+    }
+
+    // Copia el video de StreamingAssets al almacenamiento local (necesario en Android)
+    // y deja un VideoPlayer preparado. Quien lo llama decide si reproducirlo.
+    private IEnumerator PrepareVideoPlayer(string fileName, int expectedStage, bool withAudio)
+    {
+        int currentGeneration = generation;
         videoError = null;
-        string sourcePath = Path.Combine(Application.streamingAssetsPath, activeVideoFileName);
+        string sourcePath = Path.Combine(Application.streamingAssetsPath, fileName);
         byte[] videoBytes = null;
 
         using (var request = UnityWebRequest.Get(sourcePath))
@@ -223,12 +368,12 @@ public class NarrativeStageView : MonoBehaviour
 
         if (videoBytes == null || videoBytes.Length == 0)
         {
-            videoError = "Could not load " + activeVideoFileName + ". Check Assets/StreamingAssets.";
-            Debug.LogWarning("Serena: could not load the video " + activeVideoFileName + ".");
+            videoError = "Could not load " + fileName + ". Check Assets/StreamingAssets.";
+            Debug.LogWarning("Serena: no se pudo cargar el video " + fileName + ".");
             yield break;
         }
 
-        string localVideoPath = Path.Combine(Application.persistentDataPath, activeVideoFileName);
+        string localVideoPath = Path.Combine(Application.persistentDataPath, fileName);
         try
         {
             File.WriteAllBytes(localVideoPath, videoBytes);
@@ -236,15 +381,19 @@ public class NarrativeStageView : MonoBehaviour
         catch (Exception)
         {
             if (currentGeneration == generation)
-                videoError = "Could not prepare the video on this device.";
+                videoError = "The video could not be prepared on this device.";
             yield break;
         }
 
         if (currentGeneration != generation || currentStage != expectedStage)
             yield break;
 
-        videoTexture = new RenderTexture(Mathf.Max(640, Screen.width), Mathf.Max(360, Screen.height), 0, RenderTextureFormat.ARGB32);
-        videoTexture.Create();
+        if (!CreateVideoTexture(expectedStage))
+        {
+            videoError = "The video area could not be prepared on this device.";
+            yield break;
+        }
+
         videoPlayer = gameObject.AddComponent<VideoPlayer>();
         videoPlayer.playOnAwake = false;
         videoPlayer.source = VideoSource.Url;
@@ -252,10 +401,17 @@ public class NarrativeStageView : MonoBehaviour
         videoPlayer.renderMode = VideoRenderMode.RenderTexture;
         videoPlayer.targetTexture = videoTexture;
         videoPlayer.aspectRatio = VideoAspectRatio.FitInside;
-        videoPlayer.audioOutputMode = VideoAudioOutputMode.Direct;
-        videoPlayer.EnableAudioTrack(0, true);
-        videoPlayer.SetDirectAudioMute(0, false);
-        videoPlayer.SetDirectAudioVolume(0, 1f);
+        if (withAudio)
+        {
+            videoPlayer.audioOutputMode = VideoAudioOutputMode.Direct;
+            videoPlayer.EnableAudioTrack(0, true);
+            videoPlayer.SetDirectAudioMute(0, false);
+            videoPlayer.SetDirectAudioVolume(0, volumePercent / 100f);
+        }
+        else
+        {
+            videoPlayer.audioOutputMode = VideoAudioOutputMode.None;
+        }
         videoPlayer.isLooping = false;
         videoPlayer.skipOnDrop = true;
         videoPlayer.errorReceived += HandleVideoError;
@@ -281,23 +437,16 @@ public class NarrativeStageView : MonoBehaviour
         {
             if (string.IsNullOrEmpty(videoError))
                 videoError = "The video could not start on this device.";
-            yield break;
         }
-
-        if (expectedStage == 1)
-            ApplyMediaState();
-        else
-            videoPlayer.Play();
     }
 
+    // Aplica en la etapa 4 los controles del docente (pausa, ±5 s, volumen)
+    // sobre el reloj de reproducción real de esta tablet.
     private void ApplyMediaState()
     {
-        if (currentStage != 1 || videoPlayer == null || !videoPlayer.isPrepared)
+        if (currentStage != 4 || videoPlayer == null || !videoPlayer.isPrepared)
             return;
 
-        // Apply each teacher command against this tablet's actual playback clock.
-        // Tablets can finish downloading/preparing at different times, so the
-        // server's elapsed position is not a reliable seek target for live controls.
         if (appliedMediaRevision != mediaRevision)
         {
             switch (mediaCommand)
@@ -307,6 +456,7 @@ public class NarrativeStageView : MonoBehaviour
                     videoPlayer.time = 0;
                     break;
                 case "back-5":
+                    videoFinished = false;
                     videoPlayer.time = Math.Max(0, videoPlayer.time - 5);
                     break;
                 case "forward-5":
@@ -315,36 +465,23 @@ public class NarrativeStageView : MonoBehaviour
                         targetTime = Math.Min(targetTime, Math.Max(0, videoPlayer.length - 0.1));
                     videoPlayer.time = targetTime;
                     break;
-                case "sync":
-                    videoPlayer.time = Math.Max(0, mediaPositionSeconds);
-                    break;
             }
 
             appliedMediaRevision = mediaRevision;
         }
 
-        // Reassert the requested play state on every API poll. This also recovers
-        // when a VideoPlayer misses a pause/play transition during prepare or seek.
+        videoPlayer.SetDirectAudioVolume(0, volumePercent / 100f);
+
+        // Se reafirma el estado en cada consulta a la API por si el VideoPlayer
+        // perdió una transición de pausa/reproducción mientras se preparaba.
         if (mediaPaused)
         {
             if (videoPlayer.isPlaying)
                 videoPlayer.Pause();
-
-            if (!videoFinished && blurredEndFrame == null && !pauseBlurCapturePending)
-            {
-                pauseBlurCapturePending = true;
-                StartCoroutine(CaptureBlurredFrame(false));
-            }
         }
         else if (!videoPlayer.isPlaying && !videoFinished)
         {
             videoPlayer.Play();
-        }
-
-        if (!mediaPaused && !videoFinished && blurredEndFrame != null)
-        {
-            Destroy(blurredEndFrame);
-            blurredEndFrame = null;
         }
     }
 
@@ -379,7 +516,7 @@ public class NarrativeStageView : MonoBehaviour
             return null;
 
         int width = Mathf.Clamp(Screen.width / 8, 96, 320);
-        int height = Mathf.Max(54, Mathf.RoundToInt(width * Screen.height / (float)Mathf.Max(1, Screen.width)));
+        int height = Mathf.Max(54, Mathf.RoundToInt(width * videoTexture.height / (float)Mathf.Max(1, videoTexture.width)));
         RenderTexture sampleTexture = RenderTexture.GetTemporary(width, height, 0, RenderTextureFormat.ARGB32);
         RenderTexture previousTarget = RenderTexture.active;
         Texture2D sample = null;
@@ -398,7 +535,7 @@ public class NarrativeStageView : MonoBehaviour
         }
         catch (Exception exception)
         {
-            Debug.LogWarning("Serena: could not prepare the blurred story background. " + exception.Message);
+            Debug.LogWarning("Serena: no se pudo preparar el fondo borroso de la narrativa. " + exception.Message);
         }
         finally
         {
@@ -461,8 +598,8 @@ public class NarrativeStageView : MonoBehaviour
 
     private void HandleVideoError(VideoPlayer source, string message)
     {
-        videoError = "The initial story video is not supported on this device.";
-        Debug.LogWarning("Serena: the initial story video is not supported on this device.");
+        videoError = "The video is not supported on this device.";
+        Debug.LogWarning("Serena: el video no es compatible con este dispositivo. " + message);
     }
 
     private void StopVideo(bool preserveBlurredFrame = false)
@@ -500,15 +637,7 @@ public class NarrativeStageView : MonoBehaviour
     private void OnGUI()
     {
         EnsureStyles();
-        if (currentStage == 4)
-        {
-            DrawDecisionConsequenceVideo();
-            DrawTransitionFeedback();
-            return;
-        }
-
-        
-if (currentStage == 5)
+        if (currentStage == 5)
         {
             if (votingOpen) DrawVotingPanel();
             else DrawReflectionPanel();
@@ -526,6 +655,15 @@ if (currentStage == 5)
             return;
         }
 
+        if (currentStage == 4)
+        {
+            DrawDecisionConsequenceVideo();
+            DrawTransitionFeedback();
+            return;
+        }
+
+        // Etapa 1: la narrativa se proyecta en la pantalla del docente;
+        // la tablet solo muestra el fotograma borroso.
         if (currentStage != 1)
             return;
 
@@ -534,10 +672,8 @@ if (currentStage == 5)
         GUI.DrawTexture(new Rect(0, 0, Screen.width, Screen.height), Texture2D.blackTexture);
         GUI.color = Color.white;
 
-        if ((videoFinished || mediaPaused) && blurredEndFrame != null)
+        if (blurredEndFrame != null)
             GUI.DrawTexture(new Rect(0, 0, Screen.width, Screen.height), blurredEndFrame, ScaleMode.ScaleToFit);
-        else if (videoTexture != null && videoPlayer != null && (videoPlayer.isPlaying || mediaPaused))
-            GUI.DrawTexture(new Rect(0, 0, Screen.width, Screen.height), videoTexture, ScaleMode.ScaleToFit);
 
         float width = Mathf.Min(Screen.width - 40, 1200);
         float x = (Screen.width - width) / 2f;
@@ -547,13 +683,88 @@ if (currentStage == 5)
 
         if (!string.IsNullOrEmpty(videoError))
             GUI.Label(new Rect(24, Screen.height * 0.45f, Screen.width - 48, 90), videoError, statusStyle);
-        else if (videoPlayer == null || videoPlayer.isPlaying == false && videoPlayer.isPrepared == false)
-            GUI.Label(new Rect(24, Screen.height * 0.45f, Screen.width - 48, 60), "Preparing the initial story…", statusStyle);
-        else if (videoPlayer.isPrepared && videoFinished)
-            GUI.Label(new Rect(24, Screen.height * 0.45f, Screen.width - 48, 60), "Story complete. Waiting for the teacher…", statusStyle);
+        else
+            GUI.Label(new Rect(24, Screen.height * 0.45f, Screen.width - 48, 60), "The story is playing on the classroom screen.", statusStyle);
+        DrawTransitionFeedback();
+    }
+
+    // Etapa 4: video de la consecuencia de la decisión que eligió este estudiante.
+    private void DrawDecisionConsequenceVideo()
+    {
+        GUI.depth = -100;
+        GUI.color = Color.black;
+        GUI.DrawTexture(new Rect(0, 0, Screen.width, Screen.height), Texture2D.blackTexture);
+        GUI.color = Color.white;
+
+        bool videoReady = videoPlayer != null && videoPlayer.isPrepared && videoTexture != null;
+        Rect videoViewport = GetVideoViewport(4);
+        if (videoReady && !videoFinished)
+            GUI.DrawTexture(videoViewport, videoTexture, ScaleMode.ScaleToFit);
+        else if (blurredEndFrame != null)
+            GUI.DrawTexture(videoViewport, blurredEndFrame, ScaleMode.ScaleToFit);
+
+        float width = Mathf.Min(Screen.width - 40, 1200);
+        float x = (Screen.width - width) / 2f;
+        GUI.Box(new Rect(x, 20, width, 126), GUIContent.none, bannerStyle);
+        GUI.Label(new Rect(x + 24, 34, width - 48, 42), "STAGE 4 · " + stageLabel, titleStyle);
+        string decisionText = selectedDecisionIndex >= 0 && selectedDecisionIndex < DecisionValues.Length
+            ? "Your decision: " + DecisionValues[selectedDecisionIndex]
+            : stageDescription;
+        GUI.Label(new Rect(x + 24, 78, width - 48, 54), decisionText, descriptionStyle);
+
+        bool hasDecision = selectedDecisionIndex >= 0 && selectedDecisionIndex < DecisionValues.Length;
+        if (!string.IsNullOrEmpty(videoError))
+        {
+            // Sin video, el mensaje de la consecuencia se muestra igual para no perder el impacto.
+            if (hasDecision)
+                DrawConsequenceMessage(videoError);
+            else
+                GUI.Label(new Rect(24, Screen.height * 0.45f, Screen.width - 48, 90), videoError, statusStyle);
+        }
+        else if (!videoReady)
+            GUI.Label(new Rect(24, Screen.height * 0.45f, Screen.width - 48, 60), "Preparing the video for your decision…", statusStyle);
+        else if (videoFinished)
+            DrawConsequenceMessage("Wait for the teacher's signal to continue.");
+        else if (mediaPaused)
+            GUI.Label(new Rect(24, Screen.height * 0.45f, Screen.width - 48, 60), "The teacher paused the video.", statusStyle);
 
         DrawTimeline();
-        DrawTransitionFeedback();
+    }
+
+    // H.U. 7.1.3: mensaje breve, neutral y legible tras la consecuencia. Ocupa el centro de la
+    // pantalla (la etapa 4 no tiene botones) y desaparece cuando el docente cambia de etapa.
+    private void DrawConsequenceMessage(string footer)
+    {
+        if (selectedDecisionIndex < 0 || selectedDecisionIndex >= ConsequenceShortMessages.Length)
+            return;
+
+        float width = Mathf.Min(Screen.width - 48f, 860f);
+        float x = (Screen.width - width) / 2f;
+        float padding = Mathf.Clamp(width * 0.045f, 18f, 36f);
+        float contentWidth = width - padding * 2f;
+        const string title = "What may have happened";
+        string message = ConsequenceShortMessages[selectedDecisionIndex];
+        const string prompt = "Think about how the people involved may have felt.";
+        float titleHeight = consequenceTitleStyle.CalcHeight(new GUIContent(title), contentWidth);
+        float messageHeight = consequenceTextStyle.CalcHeight(new GUIContent(message), contentWidth);
+        float promptHeight = descriptionStyle.CalcHeight(new GUIContent(prompt), contentWidth);
+        float footerHeight = string.IsNullOrEmpty(footer) ? 0f : descriptionStyle.CalcHeight(new GUIContent(footer), contentWidth);
+        float height = padding * 2f + titleHeight + messageHeight + promptHeight + footerHeight + 36f;
+        Rect viewport = GetVideoViewport(4);
+        float y = Mathf.Max(viewport.y + 8f, viewport.center.y - height / 2f);
+
+        GUI.color = new Color(1f, 1f, 1f, 0.97f);
+        GUI.Box(new Rect(x, y, width, height), GUIContent.none, bannerStyle);
+        GUI.color = Color.white;
+        float cursorY = y + padding;
+        GUI.Label(new Rect(x + padding, cursorY, contentWidth, titleHeight), title, consequenceTitleStyle);
+        cursorY += titleHeight + 12f;
+        GUI.Label(new Rect(x + padding, cursorY, contentWidth, messageHeight), message, consequenceTextStyle);
+        cursorY += messageHeight + 12f;
+        GUI.Label(new Rect(x + padding, cursorY, contentWidth, promptHeight), prompt, descriptionStyle);
+        cursorY += promptHeight + 12f;
+        if (footerHeight > 0f)
+            GUI.Label(new Rect(x + padding, cursorY, contentWidth, footerHeight), footer, descriptionStyle);
     }
 
     private void DrawEmotionSelection()
@@ -574,30 +785,37 @@ if (currentStage == 5)
         GUI.Label(new Rect(16, headerY, contentWidth, Screen.height * 0.065f),
             "What emotion are you feeling right now?", emotionHeaderStyle);
         GUI.Label(new Rect(24, headerY + Screen.height * 0.065f, contentWidth - 16f, Screen.height * 0.05f),
-            "Choose the option that best matches how you feel.", emotionSubheaderStyle);
+            "Tap the option closest to what you feel", emotionSubheaderStyle);
 
         string[] emotions =
         {
             "🤔\nI feel curious",
-            "😟\nI am worried about\nbeing left out",
-            "😐\nI feel neutral",
+            "😟\nI'm worried about\nbeing left out",
+            "😐\nI don't feel\nanything special",
             "😵\nI feel confused",
             "😰\nI feel uncomfortable"
         };
         string[] imageNames = { "curiosidad", "fuera", "neutro", "confundido", "incomodo" };
-        float gapX = contentWidth * 0.035f;
-        float gapY = Screen.height * 0.018f;
-        float cardWidth = Mathf.Min((contentWidth - gapX - 36f) / 2f, 390f);
-        float cardHeight = Mathf.Min(Screen.height * 0.215f, 430f);
-        float gridWidth = cardWidth * 2 + gapX;
-        float left = (contentWidth - gridWidth) / 2f;
+        // H.U. 5.x (Bryan): la cuadrícula pasa a una columna en pantallas estrechas.
+        float gapX = Mathf.Clamp(contentWidth * 0.035f, 8f, 24f);
+        float gapY = Mathf.Clamp(Screen.height * 0.018f, 8f, 20f);
+        float twoColumnCardWidth = Mathf.Min((contentWidth - gapX - 36f) / 2f, 390f);
+        int columns = twoColumnCardWidth < 160f ? 1 : 2;
+        int rows = Mathf.CeilToInt(emotions.Length / (float)columns);
+        float cardWidth = columns == 1 ? contentWidth : twoColumnCardWidth;
         float top = Screen.height * 0.17f;
+        float gridBottom = Screen.height * 0.88f;
+        float availableCardHeight = (gridBottom - top - gapY * (rows - 1)) / rows;
+        float cardHeight = Mathf.Max(48f, Mathf.Min(Screen.height * 0.215f, 430f, availableCardHeight));
+        float gridWidth = cardWidth * columns + gapX * (columns - 1);
+        float left = (contentWidth - gridWidth) / 2f;
 
         for (int i = 0; i < emotions.Length; i++)
         {
-            int row = i / 2;
-            bool centered = i == 4;
-            float x = centered ? (contentWidth - cardWidth) / 2f : left + (i % 2) * (cardWidth + gapX);
+            int row = i / columns;
+            int column = i % columns;
+            bool centered = columns == 2 && i == emotions.Length - 1 && emotions.Length % columns != 0;
+            float x = centered ? (contentWidth - cardWidth) / 2f : left + column * (cardWidth + gapX);
             float y = top + row * (cardHeight + gapY);
             Rect card = new Rect(x, y, cardWidth, cardHeight);
             bool selected = selectedEmotionIndex == i;
@@ -616,7 +834,13 @@ if (currentStage == 5)
             if (emotionImages[i] != null)
             {
                 GUI.DrawTexture(card, emotionImages[i], ScaleMode.StretchToFill, true);
-                if (pressing)
+                if (isSubmittingInteraction)
+                {
+                    GUI.color = new Color(0.62f, 0.62f, 0.62f, 0.45f);
+                    GUI.DrawTexture(card, Texture2D.whiteTexture);
+                    GUI.color = Color.white;
+                }
+                else if (pressing)
                 {
                     GUI.color = new Color(0f, 0f, 0f, 0.14f);
                     GUI.DrawTexture(card, Texture2D.whiteTexture);
@@ -639,7 +863,7 @@ if (currentStage == 5)
                 pressedEmotionIndex = -1;
         }
 
-        DrawNarrativeSidebar("Recognize the emotion", 2);
+        DrawNarrativeSidebar("Time to recognize the emotion", 2);
         DrawInteractionStatus();
     }
 
@@ -658,63 +882,79 @@ if (currentStage == 5)
         float sidebarWidth = Mathf.Clamp(Screen.width * 0.23f, 280f, 390f);
         float contentWidth = Screen.width - sidebarWidth - 48f;
         float headerY = Screen.height * 0.045f;
-        GUI.Label(new Rect(16, headerY, contentWidth, Screen.height * 0.09f), "What would you do?", emotionHeaderStyle);
+        GUI.Label(new Rect(16, headerY, contentWidth, Screen.height * 0.09f), "What decision would you make?", emotionHeaderStyle);
+        bool hasBlocked = HasBlockedDecisions();
         GUI.Label(new Rect(24, headerY + Screen.height * 0.09f, contentWidth - 16, Screen.height * 0.07f),
-            "Choose how you would respond. You can change your selection before confirming.", emotionSubheaderStyle);
+            hasBlocked
+                ? "The blurred options were the most voted before. Choose an alternative."
+                : "Choose how to respond. You can change your selection before confirming it.", emotionSubheaderStyle);
 
-        float gapX = contentWidth * 0.035f;
-        float gapY = Screen.height * 0.018f;
-        float cardWidth = Mathf.Min((contentWidth - gapX - 36f) / 2f, 420f);
-        float cardHeight = Mathf.Min(Screen.height * 0.22f, 260f);
-        float left = (contentWidth - (cardWidth * 2 + gapX)) / 2f;
+        // H.U. 5.x (Bryan): cuadrícula adaptable. H.U. 9.3.1: opciones más votadas desenfocadas.
+        float gapX = Mathf.Clamp(contentWidth * 0.035f, 8f, 24f);
+        float gapY = Mathf.Clamp(Screen.height * 0.018f, 8f, 20f);
+        float twoColumnCardWidth = Mathf.Min((contentWidth - gapX - 36f) / 2f, 420f);
+        int columns = twoColumnCardWidth < 160f ? 1 : 2;
+        int rows = Mathf.CeilToInt(DecisionValues.Length / (float)columns);
+        float cardWidth = columns == 1 ? contentWidth : twoColumnCardWidth;
+        float left = (contentWidth - (cardWidth * columns + gapX * (columns - 1))) / 2f;
         float top = Screen.height * 0.28f;
+        float confirmY = Screen.height * 0.82f;
+        float availableCardHeight = (confirmY - top - gapY * rows) / rows;
+        float cardHeight = Mathf.Max(48f, Mathf.Min(Screen.height * 0.22f, 260f, availableCardHeight));
         for (int i = 0; i < DecisionValues.Length; i++)
         {
-            float x = left + (i % 2) * (cardWidth + gapX);
-            float y = top + (i / 2) * (cardHeight + gapY);
+            int row = i / columns;
+            int column = i % columns;
+            float x = left + column * (cardWidth + gapX);
+            float y = top + row * (cardHeight + gapY);
             Rect card = new Rect(x, y, cardWidth, cardHeight);
+            if (IsDecisionBlocked(i))
+            {
+                DrawBlockedDecisionCard(card, DecisionValues[i]);
+                continue;
+            }
             GUI.enabled = !isSubmittingInteraction;
-            if (GUI.Button(card, DecisionLabels[i], selectedDecisionIndex == i ? decisionSelectedCardStyle : decisionCardStyle))
+            if (GUI.Button(card, DecisionValues[i], selectedDecisionIndex == i ? decisionSelectedCardStyle : decisionCardStyle))
                 selectedDecisionIndex = i;
             GUI.enabled = true;
         }
         Rect confirm = new Rect((contentWidth - Mathf.Min(contentWidth * 0.56f, 500f)) / 2f,
-            Screen.height * 0.82f, Mathf.Min(contentWidth * 0.56f, 500f), Mathf.Clamp(Screen.height * 0.075f, 58f, 84f));
-        GUI.enabled = selectedDecisionIndex >= 0 && !isSubmittingInteraction;
-        if (GUI.Button(confirm, isSubmittingInteraction ? "SENDING…" : "CONFIRM DECISION", decisionSelectedCardStyle))
+            confirmY, Mathf.Min(contentWidth * 0.56f, 500f), Mathf.Clamp(Screen.height * 0.075f, 58f, 84f));
+        bool canConfirm = selectedDecisionIndex >= 0 && !IsDecisionBlocked(selectedDecisionIndex);
+        GUI.enabled = canConfirm && !isSubmittingInteraction;
+        GUIStyle confirmStyle = canConfirm ? decisionSelectedCardStyle : disabledCardStyle;
+        if (GUI.Button(confirm, isSubmittingInteraction ? "SENDING…" : "CONFIRM DECISION", confirmStyle))
             StartCoroutine(SubmitInteraction("decision", DecisionValues[selectedDecisionIndex]));
         GUI.enabled = true;
-        DrawNarrativeSidebar("Choose a response", 3);
+        DrawNarrativeSidebar("Time to make a decision", 3);
         DrawInteractionStatus();
     }
-    private void DrawDecisionConsequenceVideo()
+
+    // H.U. 9.3.1: tarjeta deshabilitada con el texto desenfocado (varias copias desplazadas
+    // y translúcidas) para que la opción ya elegida por la mayoría no se pueda volver a marcar.
+    private void DrawBlockedDecisionCard(Rect card, string text)
     {
-        GUI.depth = -100;
-        GUI.color = Color.black;
-        GUI.DrawTexture(new Rect(0, 0, Screen.width, Screen.height), Texture2D.blackTexture);
-        GUI.color = Color.white;
+        GUI.enabled = false;
+        GUI.Box(card, GUIContent.none, disabledCardStyle);
+        GUI.enabled = true;
 
-        if (videoFinished && blurredEndFrame != null)
-            GUI.DrawTexture(new Rect(0, 0, Screen.width, Screen.height), blurredEndFrame, ScaleMode.ScaleToFit);
-        else if (videoTexture != null && videoPlayer != null)
-            GUI.DrawTexture(new Rect(0, 0, Screen.width, Screen.height), videoTexture, ScaleMode.ScaleToFit);
+        Rect textArea = new Rect(card.x + 12f, card.y + 6f, card.width - 24f, card.height * 0.7f);
+        const float spread = 2.5f;
+        Color previous = GUI.color;
+        GUI.color = new Color(1f, 1f, 1f, 0.16f);
+        for (int dx = -1; dx <= 1; dx++)
+        for (int dy = -1; dy <= 1; dy++)
+            GUI.Label(new Rect(textArea.x + dx * spread, textArea.y + dy * spread, textArea.width, textArea.height),
+                text, blockedDecisionTextStyle);
 
-        float width = Mathf.Min(Screen.width - 40, 1200);
-        float x = (Screen.width - width) / 2f;
-        GUI.Box(new Rect(x, 20, width, 126), GUIContent.none, bannerStyle);
-        GUI.Label(new Rect(x + 24, 34, width - 48, 42), "STAGE 4 · " + stageLabel, titleStyle);
-        GUI.Label(new Rect(x + 24, 78, width - 48, 54), stageDescription, descriptionStyle);
-
-        if (!string.IsNullOrEmpty(videoError))
-            GUI.Label(new Rect(24, Screen.height * 0.45f, Screen.width - 48, 90), videoError, statusStyle);
-        else if (videoPlayer == null || !videoPlayer.isPrepared)
-            GUI.Label(new Rect(24, Screen.height * 0.45f, Screen.width - 48, 60), "Preparing the decision video…", statusStyle);
-        else if (videoFinished)
-            GUI.Label(new Rect(24, Screen.height * 0.84f, Screen.width - 48, 48), "Video complete. Waiting for the teacher…", statusStyle);
+        GUI.color = new Color(1f, 1f, 1f, 0.35f);
+        GUI.DrawTexture(card, Texture2D.whiteTexture);
+        GUI.color = previous;
+        GUI.Label(new Rect(card.x + 8f, card.yMax - Mathf.Min(44f, card.height * 0.32f), card.width - 16f,
+            Mathf.Min(36f, card.height * 0.28f)), "Most voted before · not available", blockedDecisionTagStyle);
     }
 
-    
-private void DrawNarrativeSidebar(string heading, int activeStep)
+    private void DrawNarrativeSidebar(string heading, int activeStep)
     {
         float width = Mathf.Clamp(Screen.width * 0.23f, 280f, 390f);
         float x = Screen.width - width - 18f;
@@ -724,10 +964,10 @@ private void DrawNarrativeSidebar(string heading, int activeStep)
         GUI.Label(new Rect(x + 18, y + 14, width - 36, 48), heading, emotionSubheaderStyle);
         GUI.Label(new Rect(x + 18, y + 78, width - 36, 30), "KEY POINT", emotionSelectedStyle);
         GUI.Label(new Rect(x + 18, y + 110, width - 36, 100),
-            "Think about how the people involved may feel. Your response is individual, and there is no right answer.", descriptionStyle);
+            "Think about how the people involved feel. Your answer is individual and there is no right option.", descriptionStyle);
         GUI.Label(new Rect(x + 18, y + 226, width - 36, 30), "REMEMBER", emotionSelectedStyle);
         GUI.Label(new Rect(x + 18, y + 258, width - 36, 78),
-            "Respond respectfully and choose what you truly think.", descriptionStyle);
+            "Answer respectfully and choose what you really think.", descriptionStyle);
         GUI.Label(new Rect(x + 18, y + height - 72, width - 36, 32), "Stage " + activeStep + " of 5", emotionSelectedStyle);
         Rect progress = new Rect(x + 18, y + height - 32, width - 36, 8);
         GUI.color = new Color(1, 1, 1, 0.2f);
@@ -737,6 +977,8 @@ private void DrawNarrativeSidebar(string heading, int activeStep)
         GUI.color = Color.white;
     }
 
+    // H.U. 7.1.4 y 7.3.1: preguntas de reflexión relacionadas con la decisión tomada.
+    // Las respuestas se envían sin nombre (solo sí/no) y no bloquean el avance del docente.
     private void DrawReflectionPanel()
     {
         if (reflectionSubmitted)
@@ -744,57 +986,80 @@ private void DrawNarrativeSidebar(string heading, int activeStep)
             DrawReflectionWaitScreen();
             return;
         }
+
         GUI.depth = -100;
         GUI.color = new Color(0.97f, 0.97f, 0.97f, 1f);
         GUI.DrawTexture(new Rect(0, 0, Screen.width, Screen.height), Texture2D.whiteTexture);
         GUI.color = Color.white;
-        GUI.Label(new Rect(24, 18, Screen.width - 48, 48), "Serena  ·  Reflection Time", reflectionTextStyle);
-        GUI.Label(new Rect(40, Screen.height * 0.075f, Screen.width - 80, 64), "Let’s reflect on what happened", reflectionTextStyle);
+        GUI.Label(new Rect(24, 18, Screen.width - 48, 48), "Serena  ·  Reflection time", reflectionTextStyle);
+        GUI.Label(new Rect(40, Screen.height * 0.075f, Screen.width - 80, 64), "Let's reflect on what happened", reflectionTextStyle);
         GUI.Label(new Rect(40, Screen.height * 0.145f, Screen.width - 80, 42),
-            "Think about your decision and its consequences for the people involved.", reflectionSmallStyle);
+            GetReflectionContextPrompt(), reflectionSmallStyle);
 
-        float width = Mathf.Min(Screen.width * 0.78f, 980f);
+        float width = Mathf.Min(Screen.width * 0.88f, 980f);
         float x = (Screen.width - width) / 2f;
         float y = Screen.height * 0.22f;
-        float height = Screen.height * 0.55f;
+        float height = Screen.height * 0.56f;
         GUI.Box(new Rect(x, y, width, height), GUIContent.none, emotionCardStyle);
         GUI.Label(new Rect(x + 24, y + 16, width - 48, 76),
             GetNeutralConsequenceText(), reflectionSmallStyle);
         string[] questions = {
-            "Did this decision align with your values?",
+            "Was this decision in line with your values?",
             "Would you make the same decision in real life?",
-            "Did you consider the impact on other people?",
-            "Are you satisfied with this outcome?"
+            "Did you think about the impact on other people?",
+            "Are you comfortable with this outcome?"
         };
-        float rowHeight = (height - 116f) / questions.Length;
+        bool landscape = Screen.width > Screen.height;
+        int columns = landscape ? 2 : 1;
+        int rows = Mathf.CeilToInt(questions.Length / (float)columns);
+        float gridTop = y + 98f;
+        float gridBottom = y + height - 12f;
+        const float rowGap = 8f;
+        const float columnGap = 8f;
+        float rowHeight = (gridBottom - gridTop - rowGap * (rows - 1)) / rows;
+        float columnWidth = (width - 48f - columnGap * (columns - 1)) / columns;
         for (int i = 0; i < questions.Length; i++)
         {
-            float rowY = y + 98f + i * rowHeight;
-            GUI.Label(new Rect(x + 24, rowY, width - 48, 34), (i + 1) + ".  " + questions[i], reflectionSmallStyle);
-            float buttonWidth = Mathf.Min(180f, (width - 80f) / 2f);
-            float buttonY = rowY + 36f;
+            int row = i / columns;
+            int column = i % columns;
+            float columnX = x + 24f + column * (columnWidth + columnGap);
+            float rowY = gridTop + row * (rowHeight + rowGap);
+            float labelHeight = Mathf.Min(34f, Mathf.Max(24f, rowHeight - 52f));
+            GUI.Label(new Rect(columnX, rowY, columnWidth, labelHeight), (i + 1) + ".  " + questions[i], reflectionSmallStyle);
+            float buttonWidth = Mathf.Min(180f, (columnWidth - 24f) / 2f);
+            float buttonY = rowY + labelHeight + 4f;
+            float answerButtonHeight = Mathf.Max(48f, Mathf.Min(64f, rowY + rowHeight - buttonY));
+            float answerX = columnX + (columnWidth - buttonWidth * 2f - 8f) / 2f;
             GUI.enabled = !reflectionSubmitted && !isSubmittingReflection;
-            if (GUI.Button(new Rect(x + 32f, buttonY, buttonWidth, 44f), "Yes", reflectionAnswers[i] == true ? reflectionSelectedButtonStyle : reflectionButtonStyle)) reflectionAnswers[i] = true;
-            if (GUI.Button(new Rect(x + 48f + buttonWidth, buttonY, buttonWidth, 44f), "No", reflectionAnswers[i] == false ? reflectionSelectedButtonStyle : reflectionButtonStyle)) reflectionAnswers[i] = false;
+            if (GUI.Button(new Rect(answerX, buttonY, buttonWidth, answerButtonHeight), "Yes", reflectionAnswers[i] == true ? reflectionSelectedButtonStyle : reflectionButtonStyle)) reflectionAnswers[i] = true;
+            if (GUI.Button(new Rect(answerX + buttonWidth + 8f, buttonY, buttonWidth, answerButtonHeight), "No", reflectionAnswers[i] == false ? reflectionSelectedButtonStyle : reflectionButtonStyle)) reflectionAnswers[i] = false;
         }
         bool complete = Array.TrueForAll(reflectionAnswers, answer => answer.HasValue);
         GUI.enabled = complete && !reflectionSubmitted && !isSubmittingReflection;
-        Rect submitRect = new Rect((Screen.width - Mathf.Min(420f, Screen.width - 48f)) / 2f, Screen.height * 0.81f, Mathf.Min(420f, Screen.width - 48f), 58f);
-        if (GUI.Button(submitRect, reflectionSubmitted ? "REFLECTION SUBMITTED" : isSubmittingReflection ? "SENDING…" : complete ? "SUBMIT REFLECTION" : "ANSWER ALL 4 QUESTIONS", reflectionButtonStyle) && complete)
+        Rect submitRect = new Rect((Screen.width - Mathf.Min(420f, Screen.width - 48f)) / 2f, Screen.height * 0.82f, Mathf.Min(420f, Screen.width - 48f), 58f);
+        if (GUI.Button(submitRect, isSubmittingReflection ? "SENDING…" : complete ? "SEND REFLECTION" : "ANSWER THE 4 QUESTIONS", reflectionButtonStyle) && complete)
             StartCoroutine(SubmitReflection());
         GUI.enabled = true;
-        if (!string.IsNullOrEmpty(reflectionMessage))
-            GUI.Label(new Rect(24, Screen.height * 0.9f, Screen.width - 48, 40), reflectionMessage, reflectionSmallStyle);
+        string reflectionStatus = reflectionMessage;
         if (finalDecision == "continue")
-            GUI.Label(new Rect(24, Screen.height * 0.91f, Screen.width - 48, 40), "The teacher chose to continue. Wait for the next instruction.", reflectionSmallStyle);
+        {
+            if (!string.IsNullOrEmpty(reflectionStatus))
+                reflectionStatus += "\n";
+            reflectionStatus += "The teacher chose to continue. You can finish your answers.";
+        }
+        float reflectionStatusY = submitRect.yMax + 6f;
+        float reflectionStatusHeight = Mathf.Max(0f, Screen.height - reflectionStatusY - 8f);
+        if (!string.IsNullOrEmpty(reflectionStatus) && reflectionStatusHeight > 0f)
+            GUI.Label(new Rect(24f, reflectionStatusY, Screen.width - 48f, reflectionStatusHeight), reflectionStatus, reflectionSmallStyle);
     }
 
-private void DrawReflectionWaitScreen()
+    private void DrawReflectionWaitScreen()
     {
+        GUI.depth = -100;
         GUI.color = new Color(0.97f, 0.97f, 0.97f, 1f);
         GUI.DrawTexture(new Rect(0, 0, Screen.width, Screen.height), Texture2D.whiteTexture);
         GUI.color = Color.white;
-        GUI.Label(new Rect(24, 18, Screen.width - 48, 48), "Serena  ·  Reflection Time", reflectionTextStyle);
+        GUI.Label(new Rect(24, 18, Screen.width - 48, 48), "Serena  ·  Reflection time", reflectionTextStyle);
 
         float width = Mathf.Min(Screen.width - 48, 760f);
         float height = Mathf.Min(Screen.height * 0.48f, 360f);
@@ -803,12 +1068,24 @@ private void DrawReflectionWaitScreen()
         GUI.Box(new Rect(x, y, width, height), GUIContent.none, emotionCardStyle);
         GUI.Label(new Rect(x + 32, y + 36, width - 64, 64), "✓", reflectionTextStyle);
 
-        string title = finalDecision == "continue" ? "The teacher chose to continue" : "Responses submitted";
+        string title = finalDecision == "continue" ? "The teacher chose to continue" : "Answers sent";
         string message = finalDecision == "continue"
             ? "Keep your tablet ready for the next part of the activity."
-            : "Your responses have been recorded. Wait while the teacher reviews the results and decides what the group will do next.";
+            : "Your answers were recorded without your name. Please wait while the teacher reviews the group's results.";
         GUI.Label(new Rect(x + 32, y + 112, width - 64, 58), title, reflectionTextStyle);
         GUI.Label(new Rect(x + 48, y + 184, width - 96, height - 210), message, reflectionSmallStyle);
+    }
+
+    private string GetReflectionContextPrompt()
+    {
+        bool hasDecision = selectedDecisionIndex >= 0 && selectedDecisionIndex < DecisionValues.Length;
+        bool hasEmotion = selectedEmotionIndex >= 0 && selectedEmotionIndex < EmotionValues.Length;
+        if (hasDecision && hasEmotion)
+            return "You decided “" + DecisionValues[selectedDecisionIndex] + "” and felt “"
+                + EmotionValues[selectedEmotionIndex] + "”. Answer with that decision in mind.";
+        if (hasDecision)
+            return "You decided “" + DecisionValues[selectedDecisionIndex] + "”. Answer with that decision in mind.";
+        return "Think about your decision and its consequences for the people involved.";
     }
 
     private IEnumerator SubmitReflection()
@@ -821,7 +1098,7 @@ private void DrawReflectionWaitScreen()
         isSubmittingReflection = true;
         reflectionMessage = "Sending reflection…";
         string answers = string.Join(",", Array.ConvertAll(reflectionAnswers, answer => answer == true ? "yes" : "no"));
-        string baseUrl = PlayerPrefs.GetString("SerenaServerUrl", serverBaseUrl).TrimEnd('/');
+        string baseUrl = SerenaServerConfig.BaseUrl;
         string url = baseUrl + "/api/sessions/" + StudentSessionContext.SessionId
             + "/students/" + StudentSessionContext.StudentId + "/reflection";
         string json = JsonUtility.ToJson(new ReflectionRequest { answers = answers });
@@ -834,13 +1111,13 @@ private void DrawReflectionWaitScreen()
         if (request.result == UnityWebRequest.Result.Success)
         {
             reflectionSubmitted = true;
-            reflectionMessage = "Reflection submitted. Wait for the teacher’s decision.";
+            reflectionMessage = "Reflection sent. Wait for the teacher's decision.";
             PlayConfirmationTone();
         }
         else
         {
-            reflectionMessage = "Could not submit. Check your connection and try again.";
-            Debug.LogWarning("Serena: failed to submit reflection (" + request.responseCode + "): " + request.error);
+            reflectionMessage = "Could not send. Check the connection and try again.";
+            Debug.LogWarning("Serena: fallo al enviar la reflexión (" + request.responseCode + "): " + request.error);
         }
         isSubmittingReflection = false;
     }    private void DrawInteractionStatus()
@@ -859,44 +1136,86 @@ private void DrawReflectionWaitScreen()
         GUI.DrawTexture(new Rect(0, 0, Screen.width, Screen.height), Texture2D.whiteTexture);
         GUI.color = Color.white;
 
-        float width = Mathf.Min(Screen.width - 40, 1050);
-        float x = (Screen.width - width) / 2f;
-        float top = Screen.height * 0.14f;
-        GUI.Box(new Rect(x, top, width, Screen.height * 0.68f), GUIContent.none, bannerStyle);
-        GUI.Label(new Rect(x + 24, top + 28, width - 48, 70), "Final Vote", titleStyle);
-        GUI.Label(new Rect(x + 32, top + 102, width - 64, 64),
-            "Vote on whether you would like to repeat or end the experience. The teacher will make the final decision.", descriptionStyle);
+        // H.U. 9.1.1 (Bryan): diseño adaptable; los botones se apilan en vertical en tablets verticales.
+        float screenWidth = Mathf.Max(1f, Screen.width);
+        float screenHeight = Mathf.Max(1f, Screen.height);
+        float smallestDimension = Mathf.Min(screenWidth, screenHeight);
+        float horizontalMargin = Mathf.Clamp(screenWidth * 0.04f, 16f, 36f);
+        float verticalMargin = Mathf.Clamp(screenHeight * 0.04f, 12f, 36f);
+        float panelWidth = Mathf.Min(screenWidth - horizontalMargin * 2f, 1050f);
+        float panelHeight = screenHeight - verticalMargin * 2f;
+        float x = (screenWidth - panelWidth) / 2f;
+        float top = (screenHeight - panelHeight) / 2f;
+        GUI.Box(new Rect(x, top, panelWidth, panelHeight), GUIContent.none, bannerStyle);
 
-        float gap = 22f;
-        float buttonWidth = (width - 64 - gap) / 2f;
-        float buttonY = top + 190;
-        float buttonHeight = Mathf.Clamp(Screen.height * 0.2f, 105f, 190f);
-        Rect continueRect = new Rect(x + 32, buttonY, buttonWidth, buttonHeight);
-        Rect alternativeRect = new Rect(continueRect.xMax + gap, buttonY, buttonWidth, buttonHeight);
-        GUI.enabled = !voteSubmitted && !isSubmittingVote;
-        if (GUI.Button(continueRect, "REPEAT THE\nEXPERIENCE", decisionCardStyle))
+        float paddingX = Mathf.Clamp(panelWidth * 0.035f, 16f, 32f);
+        float paddingY = Mathf.Clamp(smallestDimension * 0.025f, 12f, 24f);
+        float contentWidth = panelWidth - paddingX * 2f;
+        float sectionGap = Mathf.Clamp(smallestDimension * 0.018f, 8f, 16f);
+        float titleHeight = Mathf.Max(36f, titleStyle.CalcHeight(new GUIContent("Final vote"), contentWidth));
+        const string description = "Your vote is individual. The counts show the group's participation; the teacher makes the final decision.";
+        float descriptionHeight = descriptionStyle.CalcHeight(new GUIContent(description), contentWidth);
+
+        string status = voteSubmitted ? "Decision sent" : isSubmittingVote ? "Sending vote…" : voteMessage;
+        string countText = "Group participation: " + continueVotes + " continue · " + alternativeVotes + " explore an alternative";
+        float statusHeight = Mathf.Max(32f, statusStyle.CalcHeight(
+            new GUIContent("Could not send the vote. Check the connection and try again."), contentWidth));
+        float countHeight = Mathf.Max(32f, statusStyle.CalcHeight(new GUIContent(countText), contentWidth));
+        float fixedHeight = paddingY * 2f + titleHeight + descriptionHeight + statusHeight + countHeight + sectionGap * 4f;
+        float buttonAreaHeight = panelHeight - fixedHeight;
+        const float minimumTouchHeight = 48f;
+        float buttonGap = sectionGap;
+        bool stackButtons = screenHeight > screenWidth
+            && buttonAreaHeight >= minimumTouchHeight * 2f + buttonGap;
+        float buttonHeight = stackButtons
+            ? Mathf.Min(160f, (buttonAreaHeight - buttonGap) / 2f)
+            : Mathf.Min(160f, buttonAreaHeight);
+        buttonHeight = Mathf.Max(minimumTouchHeight, buttonHeight);
+        float buttonWidth = stackButtons ? contentWidth : (contentWidth - buttonGap) / 2f;
+
+        float cursorY = top + paddingY;
+        GUI.Label(new Rect(x + paddingX, cursorY, contentWidth, titleHeight), "Final vote", titleStyle);
+        cursorY += titleHeight + sectionGap;
+        GUI.Label(new Rect(x + paddingX, cursorY, contentWidth, descriptionHeight), description, descriptionStyle);
+        cursorY += descriptionHeight + sectionGap;
+
+        Rect continueRect = new Rect(x + paddingX, cursorY, buttonWidth, buttonHeight);
+        Rect alternativeRect = stackButtons
+            ? new Rect(x + paddingX, continueRect.yMax + buttonGap, buttonWidth, buttonHeight)
+            : new Rect(continueRect.xMax + buttonGap, cursorY, buttonWidth, buttonHeight);
+        GUIStyle continueStyle = submittedVoteChoice == "continue" ? decisionSelectedCardStyle : decisionCardStyle;
+        GUIStyle alternativeStyle = submittedVoteChoice == "alternative" ? decisionSelectedCardStyle : decisionCardStyle;
+        GUI.enabled = !voteSubmitted && !isSubmittingVote && !voteLockedByConflict;
+        if (GUI.Button(continueRect, "CONTINUE TO THE\nNEXT STORY", continueStyle))
+        {
+            submittedVoteChoice = "continue";
             StartCoroutine(SubmitVote("continue"));
-        if (GUI.Button(alternativeRect, "END THE\nEXPERIENCE", decisionCardStyle))
+        }
+        if (GUI.Button(alternativeRect, "EXPLORE AN\nALTERNATIVE DECISION", alternativeStyle))
+        {
+            submittedVoteChoice = "alternative";
             StartCoroutine(SubmitVote("alternative"));
+        }
         GUI.enabled = true;
 
-        string status = voteSubmitted ? "Vote submitted" : isSubmittingVote ? "Submitting vote…" : voteMessage;
+        cursorY = alternativeRect.yMax + sectionGap;
         if (!string.IsNullOrEmpty(status))
-            GUI.Label(new Rect(x + 24, buttonY + buttonHeight + 22, width - 48, 46), status, statusStyle);
+            GUI.Label(new Rect(x + paddingX, cursorY, contentWidth, statusHeight), status, statusStyle);
+        cursorY += statusHeight + sectionGap;
         if (voteSubmitted)
-            GUI.Label(new Rect(x + 24, top + Screen.height * 0.55f, width - 48, 34),
-                "Group votes: " + continueVotes + " repeat · " + alternativeVotes + " end", statusStyle);
+            GUI.Label(new Rect(x + paddingX, cursorY, contentWidth, countHeight), countText, statusStyle);
     }
 
     private IEnumerator SubmitVote(string choice)
     {
-        if (isSubmittingVote || voteSubmitted || string.IsNullOrWhiteSpace(StudentSessionContext.SessionId)
+        if (isSubmittingVote || voteSubmitted || voteLockedByConflict
+            || string.IsNullOrWhiteSpace(StudentSessionContext.SessionId)
             || string.IsNullOrWhiteSpace(StudentSessionContext.StudentId))
             yield break;
 
         isSubmittingVote = true;
         voteMessage = string.Empty;
-        string baseUrl = PlayerPrefs.GetString("SerenaServerUrl", serverBaseUrl).TrimEnd('/');
+        string baseUrl = SerenaServerConfig.BaseUrl;
         string url = baseUrl + "/api/sessions/" + StudentSessionContext.SessionId
             + "/students/" + StudentSessionContext.StudentId + "/vote";
         string json = JsonUtility.ToJson(new VoteRequest { choice = choice });
@@ -909,39 +1228,34 @@ private void DrawReflectionWaitScreen()
         if (request.result == UnityWebRequest.Result.Success)
         {
             voteSubmitted = true;
-            voteMessage = "Vote submitted";
+            voteMessage = "Decision sent";
             PlayConfirmationTone();
         }
         else if (request.responseCode == 409)
         {
-            voteSubmitted = true;
-            voteMessage = "Voting is closed or your vote has already been recorded.";
+            // Un conflicto indica que la ronda cerró o que ya existía un voto; no prueba
+            // que esta solicitud se aceptara, así que no se marca como enviada.
+            voteLockedByConflict = true;
+            submittedVoteChoice = string.Empty;
+            voteMessage = "Voting is closed or your vote was already recorded.";
         }
         else
         {
-            voteMessage = "Could not submit your vote. Check your connection and try again.";
+            submittedVoteChoice = string.Empty;
+            voteMessage = "Could not send the vote. Check the connection and try again.";
         }
         isSubmittingVote = false;
-    }
-
-    private void ShowEncouragement()
-    {
-        string[] messages = { "Great job!", "Thanks for participating.", "Your reflection matters.", "Take your time to think." };
-        int next = UnityEngine.Random.Range(0, messages.Length - 1);
-        if (next >= previousPositiveMessage) next++;
-        previousPositiveMessage = next;
-        positiveMessage = messages[next];
     }
 
     private string GetNeutralConsequenceText()
     {
         string consequence = selectedDecisionIndex switch
         {
-            0 => "A direct conversation can create space to discuss what happened and hear different perspectives from the people involved.",
-            1 => "If no one gets involved, the situation may continue without an immediate conversation. Each person may interpret that silence differently.",
-            2 => "Sharing a rumor can spread information to more people and make those involved feel exposed.",
-            3 => "Changing the subject may stop the immediate conversation, though what happened could remain unresolved.",
-            _ => "The group decision may have affected how the people involved experienced the situation. Think about what happened and how they may have felt."
+            0 => "Dialogue can open a space to talk about what happened and hear different perspectives from the people involved.",
+            1 => "By not stepping in, the situation may go on without an immediate conversation; each person may read that silence differently.",
+            2 => "Sharing a rumor can spread the information to more people and make those involved feel exposed.",
+            3 => "Changing the subject can stop the immediate conversation, but what happened may never be cleared up.",
+            _ => "The group's decision may have shaped how the people involved experienced the situation. Think about what happened and how they may have felt."
         };
 
         return "Possible consequence: " + consequence;
@@ -949,9 +1263,7 @@ private void DrawReflectionWaitScreen()
 
     private void DrawTransitionFeedback()
     {
-        if (!string.IsNullOrEmpty(positiveMessage) && Time.unscaledTime - transitionStartedAt < 2.5f)
-            GUI.Label(new Rect(24, Screen.height * 0.83f, Screen.width - 48, Screen.height * 0.055f), positiveMessage, statusStyle);
-
+        // Los mensajes positivos ahora los muestra StudentProgressView (H.U. 10.5.1).
         float elapsed = Time.unscaledTime - transitionStartedAt;
         const float duration = 0.6f;
         if (elapsed < 0f || elapsed >= duration) return;
@@ -987,13 +1299,13 @@ private void DrawReflectionWaitScreen()
         if (isSubmittingInteraction || string.IsNullOrWhiteSpace(StudentSessionContext.SessionId)
             || string.IsNullOrWhiteSpace(StudentSessionContext.StudentId))
         {
-            interactionMessage = "Could not identify your session. Please reconnect.";
+            interactionMessage = "Your session could not be identified. Please reconnect.";
             yield break;
         }
 
         isSubmittingInteraction = true;
-        interactionMessage = "Sending response…";
-        string baseUrl = PlayerPrefs.GetString("SerenaServerUrl", serverBaseUrl).TrimEnd('/');
+        interactionMessage = "Sending answer…";
+        string baseUrl = SerenaServerConfig.BaseUrl;
         string url = baseUrl + "/api/sessions/" + StudentSessionContext.SessionId
             + "/students/" + StudentSessionContext.StudentId + "/" + kind;
         string json = JsonUtility.ToJson(new InteractionRequest { value = value });
@@ -1006,13 +1318,23 @@ private void DrawReflectionWaitScreen()
 
         if (request.result == UnityWebRequest.Result.Success)
         {
-            interactionMessage = "Response submitted successfully.";
+            interactionMessage = "Answer sent successfully.";
             PlayConfirmationTone();
+        }
+        else if (request.responseCode == 422 && kind == "decision")
+        {
+            // H.U. 9.3.1: el servidor rechaza una opción que ya fue la más votada.
+            int rejected = Array.IndexOf(DecisionValues, value);
+            if (rejected >= 0)
+                blockedDecisions[rejected] = true;
+            if (selectedDecisionIndex == rejected)
+                selectedDecisionIndex = -1;
+            interactionMessage = "That option was already the most voted. Choose an alternative.";
         }
         else
         {
-            interactionMessage = "Could not submit. Check your connection and try again.";
-            Debug.LogWarning("Serena: failed to submit response (" + request.responseCode + "): " + request.error);
+            interactionMessage = "Could not send. Check the connection and try again.";
+            Debug.LogWarning("Serena: fallo al enviar la respuesta (" + request.responseCode + "): " + request.error);
         }
         isSubmittingInteraction = false;
     }
@@ -1133,6 +1455,10 @@ private void DrawReflectionWaitScreen()
             emotionCardTexture = CreateRoundedCardTexture(new Color(0.96f, 0.93f, 0.89f, 0.98f), new Color(0.72f, 0.67f, 0.6f, 1f));
         if (emotionSelectedCardTexture == null)
             emotionSelectedCardTexture = CreateRoundedCardTexture(new Color(1f, 0.98f, 0.93f, 1f), new Color(0.2f, 0.7f, 0.48f, 1f));
+        if (emotionDisabledCardTexture == null)
+            emotionDisabledCardTexture = CreateRoundedCardTexture(new Color(0.78f, 0.78f, 0.76f, 1f), new Color(0.57f, 0.56f, 0.53f, 1f));
+        if (emotionDisabledSelectedCardTexture == null)
+            emotionDisabledSelectedCardTexture = CreateRoundedCardTexture(new Color(0.79f, 0.84f, 0.8f, 1f), new Color(0.52f, 0.63f, 0.55f, 1f));
 
         string[] emotionImageNames = { "curiosidad", "fuera", "neutro", "confundido", "incomodo" };
         for (int i = 0; i < emotionImages.Length; i++)
@@ -1184,6 +1510,34 @@ private void DrawReflectionWaitScreen()
         decisionSelectedCardStyle.hover.background = emotionSelectedCardTexture;
         decisionSelectedCardStyle.active.background = decisionPressedCardTexture;
 
+        // GUIStyle no tiene estado "disabled" en Unity 6: se usa un estilo propio para lo deshabilitado.
+        disabledCardStyle = new GUIStyle(decisionCardStyle);
+        disabledCardStyle.normal.background = emotionDisabledCardTexture;
+        disabledCardStyle.hover.background = emotionDisabledCardTexture;
+        disabledCardStyle.active.background = emotionDisabledCardTexture;
+        disabledCardStyle.normal.textColor = new Color(0.42f, 0.42f, 0.4f, 1f);
+        disabledCardStyle.hover.textColor = disabledCardStyle.normal.textColor;
+        disabledCardStyle.active.textColor = disabledCardStyle.normal.textColor;
+
+        blockedDecisionTextStyle = new GUIStyle(GUI.skin.label);
+        blockedDecisionTextStyle.fontSize = decisionCardStyle.fontSize;
+        blockedDecisionTextStyle.fontStyle = FontStyle.Bold;
+        blockedDecisionTextStyle.alignment = TextAnchor.MiddleCenter;
+        blockedDecisionTextStyle.wordWrap = true;
+        blockedDecisionTextStyle.normal.textColor = new Color(0.16f, 0.11f, 0.2f);
+
+        blockedDecisionTagStyle = new GUIStyle(GUI.skin.label);
+        blockedDecisionTagStyle.fontSize = Mathf.Clamp(Screen.width / 80, 13, 20);
+        blockedDecisionTagStyle.fontStyle = FontStyle.Bold;
+        blockedDecisionTagStyle.alignment = TextAnchor.MiddleCenter;
+        blockedDecisionTagStyle.wordWrap = true;
+        blockedDecisionTagStyle.normal.textColor = new Color(0.3f, 0.3f, 0.3f);
+
+        consequenceTitleStyle = new GUIStyle(titleStyle);
+        consequenceTitleStyle.alignment = TextAnchor.MiddleCenter;
+        consequenceTextStyle = new GUIStyle(statusStyle);
+        consequenceTextStyle.fontSize = Mathf.Clamp(Screen.width / 45, 18, 30);
+
         reflectionButtonStyle = new GUIStyle(emotionCardStyle);
         reflectionButtonStyle.fontSize = Mathf.Clamp(Screen.width / 75, 16, 24);
         reflectionButtonStyle.wordWrap = true;
@@ -1229,6 +1583,10 @@ private void DrawReflectionWaitScreen()
             Destroy(emotionCardTexture);
         if (emotionSelectedCardTexture != null)
             Destroy(emotionSelectedCardTexture);
+        if (emotionDisabledCardTexture != null)
+            Destroy(emotionDisabledCardTexture);
+        if (emotionDisabledSelectedCardTexture != null)
+            Destroy(emotionDisabledSelectedCardTexture);
         if (decisionPressedCardTexture != null)
             Destroy(decisionPressedCardTexture);
     }

@@ -8,6 +8,17 @@ using UnityEngine.Video;
 
 public class NarrativeStartListener : MonoBehaviour
 {
+    private static NarrativeStartListener instance;
+
+    private enum ConnectionState
+    {
+        Connecting,
+        Connected,
+        Lost,
+        Reconnecting,
+        Restored
+    }
+
     [Serializable]
     private class SessionStatus
     {
@@ -25,9 +36,11 @@ public class NarrativeStartListener : MonoBehaviour
         public string advanceMode;
         public string finalDecision;
         public int voteRound;
+        public int volumePercent = 100;
+        // H.U. 9.3.1: opciones más votadas en rondas anteriores (se muestran desenfocadas).
+        public string[] blockedDecisions;
     }
 
-    [SerializeField] private string serverBaseUrl = "http://127.0.0.1:5080";
     [SerializeField] private string codeEntrySceneName = "1_IngresoCodigo";
     [SerializeField] private string narrativeSceneName = "3_Narrativa";
     [SerializeField] private float checkSeconds = 0.5f;
@@ -35,6 +48,8 @@ public class NarrativeStartListener : MonoBehaviour
     private bool sceneLoaded;
     private int narrativeGeneration;
     private bool introStarted;
+    private bool duplicateInstance;
+    private NarrativeStageView narrativeStageView;
 
     private bool introVisible;
     private string introError;
@@ -44,14 +59,73 @@ public class NarrativeStartListener : MonoBehaviour
     private GUIStyle titleStyle;
     private GUIStyle descriptionStyle;
     private GUIStyle introTextStyle;
+    private GUIStyle connectionTextStyle;
     private Texture2D bannerTexture;
+    private ConnectionState connectionState = ConnectionState.Connecting;
+    private string monitoredSessionId;
+    private bool hasAttemptedSessionSync;
+    private float connectionRestoredAt = -1f;
+
+    private const float ConnectionRestoredDuration = 2.5f;
+
+    private void Awake()
+    {
+        if (instance != null && instance != this)
+        {
+            duplicateInstance = true;
+            Destroy(gameObject);
+            return;
+        }
+
+        instance = this;
+    }
 
     private void Start()
     {
+        if (duplicateInstance)
+            return;
+
         transform.SetParent(null);
         DontDestroyOnLoad(gameObject);
         StartCoroutine(SynchronizeNarrative());
         StartCoroutine(HeartbeatLoop());
+    }
+
+    private void Update()
+    {
+        ResizeVideoTextureForCurrentScreen();
+    }
+
+    private void ResizeVideoTextureForCurrentScreen()
+    {
+        if (videoPlayer == null || videoTexture == null || !videoPlayer.isPlaying)
+            return;
+
+        Vector2Int size = GetFullscreenVideoTextureSize();
+        if (videoTexture.width == size.x && videoTexture.height == size.y)
+            return;
+
+        RenderTexture resizedTexture = new RenderTexture(size.x, size.y, 0, RenderTextureFormat.ARGB32);
+        if (!resizedTexture.Create())
+        {
+            Destroy(resizedTexture);
+            Debug.LogWarning("Serena: no se pudo reajustar la textura de la introducción para la pantalla actual.");
+            return;
+        }
+
+        RenderTexture previousTexture = videoTexture;
+        videoTexture = resizedTexture;
+        videoPlayer.targetTexture = resizedTexture;
+        previousTexture.Release();
+        Destroy(previousTexture);
+    }
+
+    private static Vector2Int GetFullscreenVideoTextureSize()
+    {
+        float width = Mathf.Max(1f, Screen.width);
+        float height = Mathf.Max(1f, Screen.height);
+        float scale = Mathf.Max(1f, 640f / width, 360f / height);
+        return new Vector2Int(Mathf.CeilToInt(width * scale), Mathf.CeilToInt(height * scale));
     }
 
 private IEnumerator SynchronizeNarrative()
@@ -60,17 +134,32 @@ private IEnumerator SynchronizeNarrative()
         {
             if (!string.IsNullOrWhiteSpace(StudentSessionContext.SessionId))
             {
-                string baseUrl = PlayerPrefs.GetString("SerenaServerUrl", serverBaseUrl).TrimEnd('/');
-                string url = baseUrl + "/api/sessions/" + StudentSessionContext.SessionId;
+                string sessionId = StudentSessionContext.SessionId;
+                if (monitoredSessionId != sessionId)
+                    ResetConnectionState(sessionId);
+
+                BeginSessionSyncAttempt();
+                string baseUrl = SerenaServerConfig.BaseUrl;
+                string url = baseUrl + "/api/sessions/" + sessionId;
                 using var request = UnityWebRequest.Get(url);
                 request.timeout = 5;
                 yield return request.SendWebRequest();
 
                 if (request.result == UnityWebRequest.Result.Success)
                 {
-                    SessionStatus status = JsonUtility.FromJson<SessionStatus>(request.downloadHandler.text);
+                    SessionStatus status = null;
+                    try
+                    {
+                        status = JsonUtility.FromJson<SessionStatus>(request.downloadHandler.text);
+                    }
+                    catch (Exception)
+                    {
+                        // Treat an unreadable status as a failed sync and keep polling.
+                    }
+
                     if (status != null)
                     {
+                        MarkSessionSyncSucceeded();
                         if (StudentSessionContext.NarrativeStarted && !status.narrativeStarted)
                         {
                             StopIntroduction();
@@ -114,10 +203,12 @@ private IEnumerator SynchronizeNarrative()
                             StartCoroutine(PlayIntroduction());
                         }
 
-                        NarrativeStageView stageView = FindAnyObjectByType<NarrativeStageView>();
-                        if (stageView != null && status.narrativeStarted)
+                        if (narrativeStageView == null)
+                            narrativeStageView = FindAnyObjectByType<NarrativeStageView>();
+                        if (narrativeStageView != null && status.narrativeStarted)
                         {
-                            stageView.SetNarrativeState(
+                            narrativeStageView.SetBlockedDecisions(status.blockedDecisions);
+                            narrativeStageView.SetNarrativeState(
                                 status.stage,
                                 status.stageLabel ?? string.Empty,
                                 status.stageDescription ?? string.Empty,
@@ -130,15 +221,62 @@ private IEnumerator SynchronizeNarrative()
                                 status.alternativeVotes,
                                 status.advanceMode ?? "automatic",
                                 status.finalDecision ?? string.Empty,
-                                status.voteRound
+                                status.voteRound,
+                                status.volumePercent
                             );
                         }
                     }
+                    else
+                    {
+                        MarkSessionSyncFailed();
+                    }
+                }
+                else
+                {
+                    MarkSessionSyncFailed();
                 }
             }
 
             yield return new WaitForSecondsRealtime(Mathf.Max(0.25f, checkSeconds));
         }
+    }
+
+    private void ResetConnectionState(string sessionId)
+    {
+        monitoredSessionId = sessionId;
+        connectionState = ConnectionState.Connecting;
+        hasAttemptedSessionSync = false;
+        connectionRestoredAt = -1f;
+    }
+
+    private void BeginSessionSyncAttempt()
+    {
+        if (connectionState == ConnectionState.Lost
+            || (connectionState == ConnectionState.Connecting && hasAttemptedSessionSync))
+        {
+            connectionState = ConnectionState.Reconnecting;
+        }
+
+        hasAttemptedSessionSync = true;
+    }
+
+    private void MarkSessionSyncSucceeded()
+    {
+        if (connectionState == ConnectionState.Lost || connectionState == ConnectionState.Reconnecting)
+        {
+            connectionState = ConnectionState.Restored;
+            connectionRestoredAt = Time.unscaledTime;
+        }
+        else if (connectionState != ConnectionState.Restored)
+        {
+            connectionState = ConnectionState.Connected;
+        }
+    }
+
+    private void MarkSessionSyncFailed()
+    {
+        connectionState = ConnectionState.Lost;
+        connectionRestoredAt = -1f;
     }
 
     private IEnumerator HeartbeatLoop()
@@ -148,7 +286,7 @@ private IEnumerator SynchronizeNarrative()
             if (!string.IsNullOrWhiteSpace(StudentSessionContext.SessionId)
                 && !string.IsNullOrWhiteSpace(StudentSessionContext.StudentId))
             {
-                string baseUrl = PlayerPrefs.GetString("SerenaServerUrl", serverBaseUrl).TrimEnd('/');
+                string baseUrl = SerenaServerConfig.BaseUrl;
                 string url = baseUrl + "/api/sessions/" + StudentSessionContext.SessionId
                     + "/students/" + StudentSessionContext.StudentId + "/heartbeat";
                 using var request = new UnityWebRequest(url, "POST");
@@ -180,7 +318,7 @@ private IEnumerator PlayIntroduction()
 
         if (videoBytes == null || videoBytes.Length == 0)
         {
-            ShowIntroError("Could not load the introduction. Make sure SerenaIntro.mp4 is in Assets/StreamingAssets.");
+            ShowIntroError("The introduction could not be loaded. Check that SerenaIntro.mp4 is in Assets/StreamingAssets.");
             yield break;
         }
 
@@ -192,15 +330,23 @@ private IEnumerator PlayIntroduction()
         catch (Exception)
         {
             if (generation == narrativeGeneration)
-                ShowIntroError("Could not prepare the video on this device.");
+                ShowIntroError("The video could not be prepared on this device.");
             yield break;
         }
 
         if (generation != narrativeGeneration || !StudentSessionContext.NarrativeStarted)
             yield break;
 
-        videoTexture = new RenderTexture(Mathf.Max(640, Screen.width), Mathf.Max(360, Screen.height), 0, RenderTextureFormat.ARGB32);
-        videoTexture.Create();
+        Vector2Int introTextureSize = GetFullscreenVideoTextureSize();
+        RenderTexture introTexture = new RenderTexture(
+            introTextureSize.x, introTextureSize.y, 0, RenderTextureFormat.ARGB32);
+        if (!introTexture.Create())
+        {
+            Destroy(introTexture);
+            ShowIntroError("The video could not be prepared on this device.");
+            yield break;
+        }
+        videoTexture = introTexture;
         videoPlayer = gameObject.AddComponent<VideoPlayer>();
         videoPlayer.playOnAwake = false;
         videoPlayer.source = VideoSource.Url;
@@ -248,14 +394,14 @@ private IEnumerator PlayIntroduction()
 
     private void HandleVideoError(VideoPlayer source, string message)
     {
-        ShowIntroError("This video is not supported on this device.");
+        ShowIntroError("The video is not supported on this device.");
     }
 
     private void ShowIntroError(string message)
     {
         introError = message;
         introVisible = true;
-        Debug.LogWarning("Serena: the introduction could not be played.");
+        Debug.LogWarning("Serena: no se pudo reproducir la introducción.");
     }
 
     private void FinishIntroduction()
@@ -301,7 +447,7 @@ private IEnumerator ReportIntroductionCompleted()
             && !string.IsNullOrWhiteSpace(StudentSessionContext.SessionId)
             && !string.IsNullOrWhiteSpace(StudentSessionContext.StudentId))
         {
-            string baseUrl = PlayerPrefs.GetString("SerenaServerUrl", serverBaseUrl).TrimEnd('/');
+            string baseUrl = SerenaServerConfig.BaseUrl;
             string url = baseUrl + "/api/sessions/" + StudentSessionContext.SessionId
                 + "/students/" + StudentSessionContext.StudentId + "/intro-complete";
             using var request = new UnityWebRequest(url, "POST");
@@ -316,10 +462,16 @@ private IEnumerator ReportIntroductionCompleted()
 
     private void OnGUI()
     {
-        if (!StudentSessionContext.NarrativeStarted)
+        if (string.IsNullOrWhiteSpace(StudentSessionContext.SessionId))
             return;
 
         EnsureStyles();
+        if (!StudentSessionContext.NarrativeStarted)
+        {
+            DrawConnectionIndicator();
+            return;
+        }
+
         int currentStage = StudentSessionContext.CurrentNarrativeStage;
 
         if (!StudentSessionContext.NarrativeIntroCompleted || currentStage == 0)
@@ -334,28 +486,37 @@ private IEnumerator ReportIntroductionCompleted()
 
             if (StudentSessionContext.NarrativeIntroCompleted)
             {
-                GUI.Label(new Rect(24, Screen.height * 0.45f, Screen.width - 48, 60), "Introduction complete. Waiting for the group…", introTextStyle);
+                GUI.Label(new Rect(24, Screen.height * 0.45f, Screen.width - 48, 60), "Introduction finished. Waiting for the group…", introTextStyle);
+                DrawConnectionIndicator();
                 return;
             }
             if (!string.IsNullOrEmpty(introError))
             {
                 GUI.Box(new Rect(24, Screen.height * 0.34f, Screen.width - 48, Screen.height * 0.32f), GUIContent.none, bannerStyle);
                 GUI.Label(new Rect(48, Screen.height * 0.38f, Screen.width - 96, Screen.height * 0.16f), introError, introTextStyle);
-                if (GUI.Button(new Rect(Screen.width * 0.25f, Screen.height * 0.58f, Screen.width * 0.5f, 58), "Continue without introduction"))
+                if (GUI.Button(new Rect(Screen.width * 0.25f, Screen.height * 0.58f, Screen.width * 0.5f, 58), "Continue without the introduction"))
                     FinishIntroduction();
             }
             else if (videoPlayer == null || !videoPlayer.isPlaying)
             {
                 GUI.Label(new Rect(24, Screen.height * 0.45f, Screen.width - 48, 60), "Preparing the introduction…", introTextStyle);
             }
+            DrawConnectionIndicator();
             return;
         }
 
-        // The interactive story stages are displayed in 3_Narrativa.
-        if (currentStage == 1 || currentStage == 2 || currentStage == 3)
+        // La vista de las etapas con contenido interactivo pertenece a 3_Narrativa.
+        if (currentStage == 1 || currentStage == 2 || currentStage == 3 || currentStage == 4)
+        {
+            // NarrativeStageView owns the video and controls for these stages.
+            DrawConnectionIndicator();
             return;
+        }
         if (currentStage == 5)
+        {
+            DrawConnectionIndicator();
             return;
+        }
 
         GUI.depth = -100;
         GUI.color = Color.black;
@@ -372,6 +533,68 @@ private IEnumerator ReportIntroductionCompleted()
         if (currentStage == 5 && StudentSessionContext.FinalDecision == "continue")
             GUI.Label(new Rect(stageX + 24, 170, stageWidth - 48, 54),
                 "The teacher chose to continue to the next story.", descriptionStyle);
+        DrawConnectionIndicator();
+    }
+
+    private void DrawConnectionIndicator()
+    {
+        if ((videoPlayer != null && videoPlayer.isPlaying)
+            || ((StudentSessionContext.CurrentNarrativeStage == 1
+                || StudentSessionContext.CurrentNarrativeStage == 4)
+                && narrativeStageView == null)
+            || (narrativeStageView != null && narrativeStageView.IsFullscreenVideoPlaying))
+        {
+            return;
+        }
+
+        if (connectionState == ConnectionState.Restored
+            && Time.unscaledTime - connectionRestoredAt >= ConnectionRestoredDuration)
+        {
+            connectionState = ConnectionState.Connected;
+        }
+
+        string label;
+        Color background;
+        switch (connectionState)
+        {
+            case ConnectionState.Connected:
+                label = "Connected";
+                background = new Color(0.08f, 0.48f, 0.30f, 0.94f);
+                break;
+            case ConnectionState.Lost:
+                label = "Connection lost · server unavailable";
+                background = new Color(0.62f, 0.12f, 0.12f, 0.96f);
+                break;
+            case ConnectionState.Reconnecting:
+                label = "Reconnecting…";
+                background = new Color(0.62f, 0.39f, 0.08f, 0.96f);
+                break;
+            case ConnectionState.Restored:
+                label = "Connection restored";
+                background = new Color(0.08f, 0.48f, 0.30f, 0.96f);
+                break;
+            default:
+                label = "Connecting…";
+                background = new Color(0.30f, 0.34f, 0.40f, 0.94f);
+                break;
+        }
+
+        Rect safeArea = Screen.safeArea;
+        float width = Mathf.Max(1f, Mathf.Min(340f, safeArea.width - 20f));
+        float height = 34f;
+        float x = safeArea.xMax - width - 10f;
+        float y = Screen.height - safeArea.yMax + 8f;
+        Rect indicatorRect = new Rect(x, y, width, height);
+
+        int previousDepth = GUI.depth;
+        Color previousColor = GUI.color;
+        GUI.depth = -200;
+        GUI.color = background;
+        GUI.DrawTexture(indicatorRect, Texture2D.whiteTexture);
+        GUI.color = Color.white;
+        GUI.Label(indicatorRect, label, connectionTextStyle);
+        GUI.color = previousColor;
+        GUI.depth = previousDepth;
     }
 
     private void EnsureStyles()
@@ -403,10 +626,20 @@ private IEnumerator ReportIntroductionCompleted()
         introTextStyle.alignment = TextAnchor.MiddleCenter;
         introTextStyle.wordWrap = true;
         introTextStyle.normal.textColor = Color.white;
+
+        connectionTextStyle = new GUIStyle(GUI.skin.label);
+        connectionTextStyle.fontSize = Mathf.Clamp(Screen.width / 90, 12, 17);
+        connectionTextStyle.fontStyle = FontStyle.Bold;
+        connectionTextStyle.alignment = TextAnchor.MiddleCenter;
+        connectionTextStyle.wordWrap = false;
+        connectionTextStyle.normal.textColor = Color.white;
     }
 
     private void OnDestroy()
     {
+        if (instance == this)
+            instance = null;
+
         if (videoPlayer != null)
         {
             videoPlayer.errorReceived -= HandleVideoError;

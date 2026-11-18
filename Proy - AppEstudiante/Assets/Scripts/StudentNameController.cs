@@ -74,8 +74,8 @@ public static class StudentSessionContext
             Handheld.Vibrate();
         NarrativeStarted = started;
         CurrentNarrativeStage = stage;
-        CurrentNarrativeStageLabel = TranslateStageLabel(stage);
-        CurrentNarrativeStageDescription = TranslateStageDescription(stage);
+        CurrentNarrativeStageLabel = label;
+        CurrentNarrativeStageDescription = description;
         VotingOpen = votingOpen;
         ContinueVotes = continueVotes;
         AlternativeVotes = alternativeVotes;
@@ -83,35 +83,6 @@ public static class StudentSessionContext
         FinalDecision = finalDecision;
         VoteRound = voteRound;
     }
-
-    public static string TranslateStageLabel(int stage)
-    {
-        switch (stage)
-        {
-            case 0: return "Introduction";
-            case 1: return "Initial Narrative";
-            case 2: return "Recognize the Emotion";
-            case 3: return "Choose a Decision";
-            case 4: return "See the Consequences";
-            case 5: return "Reflect as a Group";
-            default: return string.Empty;
-        }
-    }
-
-    public static string TranslateStageDescription(int stage)
-    {
-        switch (stage)
-        {
-            case 0: return "Watch the introductory video before the story begins.";
-            case 1: return "Observe the situation and understand the context.";
-            case 2: return "Identify the emotion present in this situation.";
-            case 3: return "Think about the alternatives and choose how to act.";
-            case 4: return "Observe how the situation affected everyone involved.";
-            case 5: return "Share a reflection on what happened.";
-            default: return string.Empty;
-        }
-    }
-
     public static void SetNarrativeIntroCompleted(bool completed)
     {
         NarrativeIntroCompleted = completed;
@@ -126,7 +97,7 @@ public class StudentNameController : MonoBehaviour
     [Header("UI References")]
     [SerializeField] private TMP_InputField inputFieldName;
     [SerializeField] private Button continueButton;
-    [SerializeField] private string serverBaseUrl = "http://127.0.0.1:5080";
+    [SerializeField] private TMP_Text statusText;
 
     [Header("Panel Navigation")]
     [SerializeField] private GameObject currentPanel;
@@ -135,9 +106,17 @@ public class StudentNameController : MonoBehaviour
 
     private string studentName = string.Empty;
     private string originalPlaceholder;
+    private string originalInstructions;
+    private TMP_Text continueButtonText;
+    private string originalContinueButtonText;
+    private bool isRegistering;
+    private bool sessionExpired;
 
     private void Start()
     {
+        if (statusText != null)
+            originalInstructions = statusText.text;
+
         if (inputFieldName != null)
         {
             inputFieldName.characterLimit = MaxNameLength;
@@ -149,6 +128,10 @@ public class StudentNameController : MonoBehaviour
 
         if (continueButton != null)
         {
+            StudentButtonDepthStyle.Apply(continueButton);
+            continueButtonText = continueButton.GetComponentInChildren<TMP_Text>();
+            if (continueButtonText != null)
+                originalContinueButtonText = continueButtonText.text;
             continueButton.interactable = false;
             continueButton.onClick.AddListener(OnContinuePressed);
         }
@@ -166,25 +149,43 @@ public class StudentNameController : MonoBehaviour
     private void ValidateInput(string input)
     {
         studentName = (input ?? string.Empty).Trim();
+        if (statusText != null && !isRegistering)
+            statusText.text = originalInstructions;
+        if (inputFieldName != null && inputFieldName.placeholder is TMP_Text placeholder
+            && !string.IsNullOrEmpty(originalPlaceholder))
+            placeholder.text = originalPlaceholder;
+
         bool isValid = studentName.Length >= MinNameLength && studentName.Length <= MaxNameLength;
 
         if (continueButton != null)
-            continueButton.interactable = isValid;
+            continueButton.interactable = isValid && !isRegistering;
     }
 
     private void OnContinuePressed()
     {
+        if (sessionExpired)
+        {
+            SceneManager.LoadScene("1_IngresoCodigo");
+            return;
+        }
+
+        if (isRegistering)
+            return;
+
         ValidateInput(inputFieldName != null ? inputFieldName.text : studentName);
         if (studentName.Length < MinNameLength || studentName.Length > MaxNameLength)
             return;
 
+        isRegistering = true;
+        if (inputFieldName != null) inputFieldName.interactable = false;
         if (continueButton != null) continueButton.interactable = false;
         StartCoroutine(RegisterStudentAndContinue());
     }
 
     private IEnumerator RegisterStudentAndContinue()
     {
-        string baseUrl = PlayerPrefs.GetString("SerenaServerUrl", serverBaseUrl).TrimEnd('/');
+        SetStatus("Signing you in...");
+        string baseUrl = SerenaServerConfig.BaseUrl;
         string sessionId = StudentSessionContext.SessionId;
         string identityKey = studentName.Trim().ToLowerInvariant();
         string storageKey = "Serena.StudentId." + sessionId + "." + identityKey;
@@ -206,39 +207,35 @@ public class StudentNameController : MonoBehaviour
 
         if (request.result != UnityWebRequest.Result.Success)
         {
-            ShowConnectionMessage(request.responseCode == 404
-                ? "The session has expired. Enter the code again."
-                : "Could not connect to Serena. Check your network and try again.");
-            if (continueButton != null) continueButton.interactable = true;
+            if (request.responseCode == 404)
+            {
+                isRegistering = false;
+                sessionExpired = true;
+                if (inputFieldName != null)
+                    inputFieldName.interactable = false;
+                if (continueButton != null)
+                    continueButton.interactable = true;
+                if (continueButtonText != null)
+                    continueButtonText.text = "Enter the code again";
+                SetStatus("The session expired. Enter the code again.");
+            }
+            else
+            {
+                FinishRegistrationWithMessage("We could not connect. Check the network and try again.");
+            }
             yield break;
         }
 
         var response = JsonUtility.FromJson<JoinStudentResponse>(request.downloadHandler.text);
         if (response == null || string.IsNullOrWhiteSpace(response.studentId))
         {
-            ShowConnectionMessage("The server returned invalid data. Please try again.");
-            if (continueButton != null) continueButton.interactable = true;
+            FinishRegistrationWithMessage("The response was not valid. Please try again.");
             yield break;
         }
 
         PlayerPrefs.SetString(storageKey, response.studentId);
         PlayerPrefs.Save();
         ContinueToActivity(response.studentId);
-        StudentHeartbeatRunner.Run(HeartbeatLoop(sessionId, response.studentId));
-    }
-
-    private IEnumerator HeartbeatLoop(string sessionId, string studentId)
-    {
-        string baseUrl = PlayerPrefs.GetString("SerenaServerUrl", serverBaseUrl).TrimEnd('/');
-        while (StudentSessionContext.SessionId == sessionId && StudentSessionContext.StudentId == studentId)
-        {
-            yield return new WaitForSecondsRealtime(5f);
-            using var request = new UnityWebRequest(baseUrl + "/api/sessions/" + sessionId + "/students/" + studentId + "/heartbeat", "POST");
-            request.downloadHandler = new DownloadHandlerBuffer();
-            request.timeout = 5;
-            yield return request.SendWebRequest();
-            if (request.responseCode == 404) yield break;
-        }
     }
 
     private void ContinueToActivity(string studentId)
@@ -246,7 +243,7 @@ public class StudentNameController : MonoBehaviour
         StudentSessionContext.SetStudent(studentName, studentId);
         SaveStudentData(studentName, studentId, StudentSessionContext.SessionId);
 
-        // Load a scene if one is configured; otherwise use the existing panel navigation.
+        // Si se ha configurado una escena, cargarla. Si no, usar la navegación por paneles existente.
         if (!string.IsNullOrWhiteSpace(sceneToLoad))
         {
             SceneManager.LoadScene(sceneToLoad);
@@ -257,8 +254,26 @@ public class StudentNameController : MonoBehaviour
         if (nextPanel != null) nextPanel.SetActive(true);
     }
 
-    private void ShowConnectionMessage(string message)
+    private void FinishRegistrationWithMessage(string message)
     {
+        isRegistering = false;
+        if (inputFieldName != null)
+            inputFieldName.interactable = true;
+        if (continueButton != null)
+            continueButton.interactable = studentName.Length >= MinNameLength && studentName.Length <= MaxNameLength;
+        if (continueButtonText != null)
+            continueButtonText.text = originalContinueButtonText;
+        SetStatus(message);
+    }
+
+    private void SetStatus(string message)
+    {
+        if (statusText != null)
+        {
+            statusText.text = message;
+            return;
+        }
+
         if (inputFieldName != null && inputFieldName.placeholder is TMP_Text placeholder)
             placeholder.text = message;
         else
@@ -280,11 +295,11 @@ public class StudentNameController : MonoBehaviour
         {
             Directory.CreateDirectory(folderPath);
             File.WriteAllText(fullFilePath, JsonUtility.ToJson(data, true));
-            Debug.Log("Student session data saved locally.");
+            Debug.Log("Datos de la sesión del estudiante guardados localmente.");
         }
         catch (Exception exception)
         {
-            Debug.LogError("Could not save student data: " + exception.Message);
+            Debug.LogError("No se pudieron guardar los datos del estudiante: " + exception.Message);
         }
     }
 }
@@ -310,27 +325,4 @@ public class StudentData
     public string studentName;
     public string studentId;
     public string sessionId;
-}
-
-public sealed class StudentHeartbeatRunner : MonoBehaviour
-{
-    private static StudentHeartbeatRunner instance;
-
-    public static void Run(IEnumerator routine)
-    {
-        if (instance == null)
-        {
-            var host = new GameObject(nameof(StudentHeartbeatRunner));
-            instance = host.AddComponent<StudentHeartbeatRunner>();
-            DontDestroyOnLoad(host);
-        }
-
-        instance.StartCoroutine(routine);
-    }
-
-    private void OnDestroy()
-    {
-        if (instance == this)
-            instance = null;
-    }
 }

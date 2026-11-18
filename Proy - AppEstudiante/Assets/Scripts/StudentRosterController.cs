@@ -8,9 +8,9 @@ public sealed class StudentRosterController : MonoBehaviour
 {
     [Header("Panel")]
     [SerializeField] private TMP_Text connectedStudentsCount;
+    [SerializeField] private TMP_Text groupParticipationText;
     [SerializeField] private Transform studentListContainer;
     [SerializeField] private StudentRowView studentRowPrefab;
-    [SerializeField] private int maxStudentsToShow = 12;
 
     [Header("Indicadores RawImage")]
     [SerializeField] private Texture readyTexture;
@@ -18,8 +18,7 @@ public sealed class StudentRosterController : MonoBehaviour
     [SerializeField] private Color readyColor = new(0.05f, 0.75f, 0.48f, 1f);
     [SerializeField] private Color notReadyColor = new(0.85f, 0.10f, 0.15f, 1f);
 
-    [Header("Connection")]
-    [SerializeField] private string serverBaseUrl = "http://127.0.0.1:5080";
+    [Header("Conexión")]
     [SerializeField] private float refreshSeconds = 1f;
 
     [Serializable]
@@ -42,13 +41,43 @@ public sealed class StudentRosterController : MonoBehaviour
 
     private void OnEnable()
     {
+        if (!ValidateRequiredReferences())
+            return;
+
         refreshRoutine = StartCoroutine(RefreshLoop());
     }
 
     private void OnDisable()
     {
         if (refreshRoutine != null)
+        {
             StopCoroutine(refreshRoutine);
+            refreshRoutine = null;
+        }
+    }
+
+    private bool ValidateRequiredReferences()
+    {
+        bool valid = true;
+
+        if (studentListContainer == null)
+        {
+            Debug.LogError($"{nameof(StudentRosterController)} on '{name}' requires a student list container. Assign the ScrollRect content Transform in the Inspector.", this);
+            valid = false;
+        }
+        else if (!(studentListContainer is RectTransform))
+        {
+            Debug.LogError($"{nameof(StudentRosterController)} on '{name}' requires a UI RectTransform as its student list container.", this);
+            valid = false;
+        }
+
+        if (studentRowPrefab == null)
+        {
+            Debug.LogError($"{nameof(StudentRosterController)} on '{name}' has no student row prefab assigned. Assign the StudentRowView prefab in the Inspector.", this);
+            valid = false;
+        }
+
+        return valid;
     }
 
     private IEnumerator RefreshLoop()
@@ -62,11 +91,14 @@ public sealed class StudentRosterController : MonoBehaviour
 
     private IEnumerator RefreshRoster()
     {
+        if (!ValidateRequiredReferences())
+            yield break;
+
         string sessionCode = StudentSessionContext.SessionId;
         if (string.IsNullOrWhiteSpace(sessionCode))
             yield break;
 
-        string baseUrl = PlayerPrefs.GetString("SerenaServerUrl", serverBaseUrl).TrimEnd('/');
+        string baseUrl = SerenaServerConfig.BaseUrl;
         string studentId = StudentSessionContext.StudentId;
         if (string.IsNullOrWhiteSpace(studentId))
             yield break;
@@ -78,7 +110,7 @@ public sealed class StudentRosterController : MonoBehaviour
 
         if (request.result != UnityWebRequest.Result.Success)
         {
-            Debug.LogWarning($"Could not retrieve students: {request.error}");
+            Debug.LogWarning($"No se pudo consultar estudiantes: {request.error}");
             yield break;
         }
 
@@ -89,30 +121,31 @@ public sealed class StudentRosterController : MonoBehaviour
         }
         catch (Exception exception)
         {
-            Debug.LogWarning($"Invalid response: {exception.Message}");
+            Debug.LogWarning($"Respuesta inválida: {exception.Message}");
             yield break;
         }
 
         ClearRows();
 
         int connectedCount = 0;
-        int rowsCreated = 0;
+        int readyCount = 0;
         if (response?.students != null)
         {
             foreach (RosterStudent student in response.students)
             {
                 if (student == null || !student.connected) continue;
                 connectedCount++;
+                if (student.ready) readyCount++;
 
-                if (rowsCreated >= Mathf.Max(0, maxStudentsToShow)) continue;
-                StudentRowView row = Instantiate(studentRowPrefab, studentListContainer);
+                StudentRowView row = Instantiate(studentRowPrefab, studentListContainer, false);
                 row.Configure(student.name, student.ready, readyTexture, notReadyTexture, readyColor, notReadyColor);
-                rowsCreated++;
             }
         }
 
         if (connectedStudentsCount != null)
             connectedStudentsCount.text = connectedCount.ToString();
+        if (groupParticipationText != null)
+            groupParticipationText.text = $"In the group: {connectedCount} connected · {readyCount} ready.";
     }
 
     private void ClearRows()
