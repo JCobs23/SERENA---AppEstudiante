@@ -1129,81 +1129,266 @@ public class NarrativeStageView : MonoBehaviour
             interactionMessage, statusStyle);
     }
 
+    // Paleta de la votación (misma identidad que la web del docente).
+    private static readonly Color VoteRed = new Color(0.82f, 0.12f, 0.16f);
+    private static readonly Color VoteGreen = new Color(0.13f, 0.71f, 0.45f);
+    private static readonly Color VoteInk = new Color(0.07f, 0.07f, 0.09f);
+    private static readonly Color VoteMuted = new Color(0.42f, 0.42f, 0.46f);
+    private static readonly Color VoteLine = new Color(0.92f, 0.92f, 0.93f);
+
+    private Font voteBoldFont;
+    private Font voteRegularFont;
+    private Texture2D voteCardTexture;
+    private Texture2D voteCardContinueTexture;
+    private Texture2D voteCardAlternativeTexture;
+    private Texture2D voteCardDisabledTexture;
+    private Texture2D voteContinueIcon;
+    private Texture2D voteAlternativeIcon;
+    private GUIStyle voteCardStyle;
+    private GUIStyle voteCardContinueStyle;
+    private GUIStyle voteCardAlternativeStyle;
+    private GUIStyle voteCardDisabledStyle;
+    private GUIStyle voteBrandStyle;
+    private GUIStyle voteTitleStyle;
+    private GUIStyle voteSubtitleStyle;
+    private GUIStyle voteOptionTitleStyle;
+    private GUIStyle voteOptionTextStyle;
+    private GUIStyle voteFootnoteStyle;
+    private GUIStyle voteStatusStyle;
+    private float voteStylesScale = -1f;
+
+    private void EnsureVoteStyles(float scale)
+    {
+        if (voteCardTexture == null)
+        {
+            voteBoldFont = Resources.Load<Font>("Fonts/Gabarito-Bold");
+            voteRegularFont = Resources.Load<Font>("Fonts/Gabarito-Regular");
+            voteCardTexture = CreateRoundedCardTexture(Color.white, VoteInk);
+            voteCardContinueTexture = CreateRoundedCardTexture(new Color(0.91f, 0.98f, 0.94f), VoteGreen);
+            voteCardAlternativeTexture = CreateRoundedCardTexture(new Color(0.99f, 0.92f, 0.92f), VoteRed);
+            voteCardDisabledTexture = CreateRoundedCardTexture(Color.white, new Color(0.82f, 0.82f, 0.84f));
+            voteContinueIcon = CreateVoteIcon(VoteGreen, false);
+            voteAlternativeIcon = CreateVoteIcon(VoteRed, true);
+        }
+
+        if (Mathf.Approximately(scale, voteStylesScale))
+            return;
+        voteStylesScale = scale;
+
+        GUIStyle Card(Texture2D background)
+        {
+            var style = new GUIStyle(GUIStyle.none);
+            style.normal.background = background;
+            style.border = new RectOffset(18, 18, 18, 18);
+            return style;
+        }
+        voteCardStyle = Card(voteCardTexture);
+        voteCardContinueStyle = Card(voteCardContinueTexture);
+        voteCardAlternativeStyle = Card(voteCardAlternativeTexture);
+        voteCardDisabledStyle = Card(voteCardDisabledTexture);
+
+        GUIStyle Text(Font font, int size, Color color, TextAnchor anchor)
+        {
+            var style = new GUIStyle(GUI.skin.label);
+            if (font != null) style.font = font;
+            style.fontSize = Mathf.RoundToInt(size * scale);
+            style.normal.textColor = color;
+            style.alignment = anchor;
+            style.wordWrap = true;
+            style.padding = new RectOffset(0, 0, 0, 0);
+            style.margin = new RectOffset(0, 0, 0, 0);
+            return style;
+        }
+        voteBrandStyle = Text(voteBoldFont, 26, VoteRed, TextAnchor.MiddleLeft);
+        voteTitleStyle = Text(voteBoldFont, 46, VoteRed, TextAnchor.MiddleCenter);
+        voteSubtitleStyle = Text(voteRegularFont, 24, VoteInk, TextAnchor.MiddleCenter);
+        voteOptionTitleStyle = Text(voteBoldFont, 27, VoteInk, TextAnchor.LowerLeft);
+        voteOptionTextStyle = Text(voteRegularFont, 18, VoteMuted, TextAnchor.UpperLeft);
+        voteFootnoteStyle = Text(voteRegularFont, 17, VoteMuted, TextAnchor.MiddleCenter);
+        voteStatusStyle = Text(voteBoldFont, 20, VoteInk, TextAnchor.MiddleCenter);
+    }
+
     private void DrawVotingPanel()
     {
         GUI.depth = -100;
-        GUI.color = new Color(0.035f, 0.04f, 0.06f, 0.96f);
-        GUI.DrawTexture(new Rect(0, 0, Screen.width, Screen.height), Texture2D.whiteTexture);
-        GUI.color = Color.white;
 
-        // H.U. 9.1.1 (Bryan): diseño adaptable; los botones se apilan en vertical en tablets verticales.
+        // H.U. 9.1.1 (Bryan): pantalla clara y adaptable; las tarjetas tienen el ancho de la columna
+        // central y una altura táctil amplia tanto en horizontal como en vertical.
         float screenWidth = Mathf.Max(1f, Screen.width);
         float screenHeight = Mathf.Max(1f, Screen.height);
-        float smallestDimension = Mathf.Min(screenWidth, screenHeight);
-        float horizontalMargin = Mathf.Clamp(screenWidth * 0.04f, 16f, 36f);
-        float verticalMargin = Mathf.Clamp(screenHeight * 0.04f, 12f, 36f);
-        float panelWidth = Mathf.Min(screenWidth - horizontalMargin * 2f, 1050f);
-        float panelHeight = screenHeight - verticalMargin * 2f;
-        float x = (screenWidth - panelWidth) / 2f;
-        float top = (screenHeight - panelHeight) / 2f;
-        GUI.Box(new Rect(x, top, panelWidth, panelHeight), GUIContent.none, bannerStyle);
+        float scale = Mathf.Clamp(Mathf.Min(screenWidth / 1280f, screenHeight / 800f), 0.65f, 2.2f);
+        EnsureVoteStyles(scale);
 
-        float paddingX = Mathf.Clamp(panelWidth * 0.035f, 16f, 32f);
-        float paddingY = Mathf.Clamp(smallestDimension * 0.025f, 12f, 24f);
-        float contentWidth = panelWidth - paddingX * 2f;
-        float sectionGap = Mathf.Clamp(smallestDimension * 0.018f, 8f, 16f);
-        float titleHeight = Mathf.Max(36f, titleStyle.CalcHeight(new GUIContent("Final vote"), contentWidth));
-        const string description = "Your vote is individual. The counts show the group's participation; the teacher makes the final decision.";
-        float descriptionHeight = descriptionStyle.CalcHeight(new GUIContent(description), contentWidth);
+        GUI.color = Color.white;
+        GUI.DrawTexture(new Rect(0, 0, screenWidth, screenHeight), Texture2D.whiteTexture);
 
-        string status = voteSubmitted ? "Decision sent" : isSubmittingVote ? "Sending vote…" : voteMessage;
-        string countText = "Group participation: " + continueVotes + " continue · " + alternativeVotes + " explore an alternative";
-        float statusHeight = Mathf.Max(32f, statusStyle.CalcHeight(
-            new GUIContent("Could not send the vote. Check the connection and try again."), contentWidth));
-        float countHeight = Mathf.Max(32f, statusStyle.CalcHeight(new GUIContent(countText), contentWidth));
-        float fixedHeight = paddingY * 2f + titleHeight + descriptionHeight + statusHeight + countHeight + sectionGap * 4f;
-        float buttonAreaHeight = panelHeight - fixedHeight;
-        const float minimumTouchHeight = 48f;
-        float buttonGap = sectionGap;
-        bool stackButtons = screenHeight > screenWidth
-            && buttonAreaHeight >= minimumTouchHeight * 2f + buttonGap;
-        float buttonHeight = stackButtons
-            ? Mathf.Min(160f, (buttonAreaHeight - buttonGap) / 2f)
-            : Mathf.Min(160f, buttonAreaHeight);
-        buttonHeight = Mathf.Max(minimumTouchHeight, buttonHeight);
-        float buttonWidth = stackButtons ? contentWidth : (contentWidth - buttonGap) / 2f;
+        // Encabezado con la marca y una línea fina, como en la web del docente.
+        float headerHeight = 64f * scale;
+        GUI.Label(new Rect(28f * scale, 0f, 300f * scale, headerHeight), "Serena", voteBrandStyle);
+        GUI.color = VoteLine;
+        GUI.DrawTexture(new Rect(0f, headerHeight, screenWidth, Mathf.Max(1f, scale)), Texture2D.whiteTexture);
+        GUI.color = Color.white;
 
-        float cursorY = top + paddingY;
-        GUI.Label(new Rect(x + paddingX, cursorY, contentWidth, titleHeight), "Final vote", titleStyle);
-        cursorY += titleHeight + sectionGap;
-        GUI.Label(new Rect(x + paddingX, cursorY, contentWidth, descriptionHeight), description, descriptionStyle);
-        cursorY += descriptionHeight + sectionGap;
+        float columnWidth = Mathf.Min(screenWidth - 48f * scale, 760f * scale);
+        float x = (screenWidth - columnWidth) / 2f;
+        float titleHeight = 60f * scale;
+        float subtitleHeight = 36f * scale;
+        float cardHeight = 118f * scale;
+        float gap = 22f * scale;
+        float footHeight = 30f * scale;
+        float statusHeight = 34f * scale;
+        float blockHeight = titleHeight + 8f * scale + subtitleHeight + gap * 1.6f
+            + cardHeight * 2f + gap + gap + footHeight + statusHeight;
+        float y = headerHeight + Mathf.Max(16f * scale, (screenHeight - headerHeight - blockHeight) / 2f);
 
-        Rect continueRect = new Rect(x + paddingX, cursorY, buttonWidth, buttonHeight);
-        Rect alternativeRect = stackButtons
-            ? new Rect(x + paddingX, continueRect.yMax + buttonGap, buttonWidth, buttonHeight)
-            : new Rect(continueRect.xMax + buttonGap, cursorY, buttonWidth, buttonHeight);
-        GUIStyle continueStyle = submittedVoteChoice == "continue" ? decisionSelectedCardStyle : decisionCardStyle;
-        GUIStyle alternativeStyle = submittedVoteChoice == "alternative" ? decisionSelectedCardStyle : decisionCardStyle;
-        GUI.enabled = !voteSubmitted && !isSubmittingVote && !voteLockedByConflict;
-        if (GUI.Button(continueRect, "CONTINUE TO THE\nNEXT STORY", continueStyle))
+        GUI.Label(new Rect(x, y, columnWidth, titleHeight), "Your decision matters", voteTitleStyle);
+        y += titleHeight + 8f * scale;
+        GUI.Label(new Rect(x, y, columnWidth, subtitleHeight), "What should the group do now?", voteSubtitleStyle);
+        y += subtitleHeight + gap * 1.6f;
+
+        bool canVote = !voteSubmitted && !isSubmittingVote && !voteLockedByConflict;
+        Rect continueRect = new Rect(x, y, columnWidth, cardHeight);
+        Rect alternativeRect = new Rect(x, continueRect.yMax + gap, columnWidth, cardHeight);
+
+        if (DrawVoteOption(continueRect, "continue", voteContinueIcon,
+                "Continue to the next narrative", "Move forward with the consequences of this decision",
+                voteCardContinueStyle, canVote, scale))
         {
             submittedVoteChoice = "continue";
             StartCoroutine(SubmitVote("continue"));
         }
-        if (GUI.Button(alternativeRect, "EXPLORE AN\nALTERNATIVE DECISION", alternativeStyle))
+        if (DrawVoteOption(alternativeRect, "alternative", voteAlternativeIcon,
+                "Vote to explore another alternative", "Go back and take a different path",
+                voteCardAlternativeStyle, canVote, scale))
         {
             submittedVoteChoice = "alternative";
             StartCoroutine(SubmitVote("alternative"));
         }
-        GUI.enabled = true;
 
-        cursorY = alternativeRect.yMax + sectionGap;
-        if (!string.IsNullOrEmpty(status))
-            GUI.Label(new Rect(x + paddingX, cursorY, contentWidth, statusHeight), status, statusStyle);
-        cursorY += statusHeight + sectionGap;
+        y = alternativeRect.yMax + gap;
+        GUI.Label(new Rect(x, y, columnWidth, footHeight),
+            "Your vote is individual. The teacher makes the final decision with the group's votes.", voteFootnoteStyle);
+        y += footHeight + 6f * scale;
+
+        string status;
+        Color statusColor = VoteInk;
         if (voteSubmitted)
-            GUI.Label(new Rect(x + paddingX, cursorY, contentWidth, countHeight), countText, statusStyle);
+        {
+            status = "Vote sent · Group: " + continueVotes + " continue · " + alternativeVotes + " explore an alternative";
+            statusColor = new Color(0.08f, 0.5f, 0.31f);
+        }
+        else if (isSubmittingVote)
+            status = "Sending vote…";
+        else
+        {
+            status = voteMessage;
+            if (!string.IsNullOrEmpty(status)) statusColor = VoteRed;
+        }
+        if (!string.IsNullOrEmpty(status))
+        {
+            voteStatusStyle.normal.textColor = statusColor;
+            GUI.Label(new Rect(x - 40f * scale, y, columnWidth + 80f * scale, statusHeight), status, voteStatusStyle);
+        }
+    }
+
+    // Dibuja una tarjeta de voto con su icono, título y descripción. Devuelve true al tocarla.
+    private bool DrawVoteOption(Rect rect, string choice, Texture2D icon, string title, string text,
+        GUIStyle selectedStyle, bool interactive, float scale)
+    {
+        bool isSelected = submittedVoteChoice == choice;
+        bool dimmed = !interactive && !isSelected;
+        GUIStyle cardStyle = isSelected ? selectedStyle : dimmed ? voteCardDisabledStyle : voteCardStyle;
+        GUI.Box(rect, GUIContent.none, cardStyle);
+
+        float iconSize = 64f * scale;
+        float pad = 26f * scale;
+        GUI.color = dimmed ? new Color(1f, 1f, 1f, 0.45f) : Color.white;
+        GUI.DrawTexture(new Rect(rect.x + pad, rect.center.y - iconSize / 2f, iconSize, iconSize), icon, ScaleMode.ScaleToFit);
+        GUI.color = Color.white;
+
+        float textX = rect.x + pad + iconSize + 22f * scale;
+        float textWidth = rect.xMax - pad - textX;
+        Color titleColor = voteOptionTitleStyle.normal.textColor;
+        Color bodyColor = voteOptionTextStyle.normal.textColor;
+        if (dimmed)
+        {
+            voteOptionTitleStyle.normal.textColor = new Color(0.62f, 0.62f, 0.65f);
+            voteOptionTextStyle.normal.textColor = new Color(0.72f, 0.72f, 0.75f);
+        }
+        GUI.Label(new Rect(textX, rect.y, textWidth, rect.height * 0.52f), title, voteOptionTitleStyle);
+        GUI.Label(new Rect(textX, rect.y + rect.height * 0.56f, textWidth, rect.height * 0.4f), text, voteOptionTextStyle);
+        voteOptionTitleStyle.normal.textColor = titleColor;
+        voteOptionTextStyle.normal.textColor = bodyColor;
+
+        if (!interactive)
+            return false;
+        return GUI.Button(rect, GUIContent.none, GUIStyle.none);
+    }
+
+    // Icono cuadrado redondeado con una flecha (continuar) o una flecha circular (explorar otra opción).
+    private static Texture2D CreateVoteIcon(Color background, bool circular)
+    {
+        const int size = 128;
+        const float radius = 24f;
+        var texture = new Texture2D(size, size, TextureFormat.RGBA32, false) { filterMode = FilterMode.Bilinear };
+        Vector2 center = new Vector2(size / 2f, size / 2f);
+        for (int y = 0; y < size; y++)
+        {
+            for (int x = 0; x < size; x++)
+            {
+                Vector2 p = new Vector2(x + 0.5f, y + 0.5f);
+                float qx = Mathf.Abs(p.x - center.x) - (size / 2f - radius);
+                float qy = Mathf.Abs(p.y - center.y) - (size / 2f - radius);
+                float box = Mathf.Min(Mathf.Max(qx, qy), 0f) + new Vector2(Mathf.Max(qx, 0f), Mathf.Max(qy, 0f)).magnitude - radius;
+                if (box > 0.5f) { texture.SetPixel(x, y, Color.clear); continue; }
+
+                float glyph = circular ? CircularArrowDistance(p, center) : StraightArrowDistance(p, center);
+                float ink = Mathf.Clamp01(0.5f - glyph);
+                float edge = Mathf.Clamp01(0.5f - box);
+                Color pixel = Color.Lerp(background, Color.white, ink);
+                pixel.a = edge;
+                texture.SetPixel(x, y, pixel);
+            }
+        }
+        texture.Apply(false, true);
+        return texture;
+    }
+
+    private static float SegmentDistance(Vector2 p, Vector2 a, Vector2 b)
+    {
+        Vector2 ab = b - a;
+        float t = Mathf.Clamp01(Vector2.Dot(p - a, ab) / ab.sqrMagnitude);
+        return (p - (a + ab * t)).magnitude;
+    }
+
+    private static float StraightArrowDistance(Vector2 p, Vector2 c)
+    {
+        const float half = 5f;
+        float shaft = SegmentDistance(p, c + new Vector2(-24f, 0f), c + new Vector2(22f, 0f));
+        float upper = SegmentDistance(p, c + new Vector2(24f, 0f), c + new Vector2(6f, 18f));
+        float lower = SegmentDistance(p, c + new Vector2(24f, 0f), c + new Vector2(6f, -18f));
+        return Mathf.Min(shaft, Mathf.Min(upper, lower)) - half;
+    }
+
+    private static float CircularArrowDistance(Vector2 p, Vector2 c)
+    {
+        const float half = 5f;
+        const float ringRadius = 23f;
+        const float gapStart = 95f;
+        const float gapEnd = 150f;
+        Vector2 d = p - c;
+        float angle = Mathf.Atan2(d.y, d.x) * Mathf.Rad2Deg;
+        if (angle < 0f) angle += 360f;
+        // Anillo abierto arriba a la izquierda; la punta sigue la tangente al final del arco.
+        float ring = angle > gapStart && angle < gapEnd ? 999f : Mathf.Abs(d.magnitude - ringRadius) - half;
+        float theta = gapStart * Mathf.Deg2Rad;
+        Vector2 radial = new Vector2(Mathf.Cos(theta), Mathf.Sin(theta));
+        Vector2 tangent = new Vector2(-radial.y, radial.x);
+        Vector2 end = c + radial * ringRadius;
+        Vector2 tip = end + tangent * 10f;
+        float head = Mathf.Min(SegmentDistance(p, tip, end - tangent * 4f + radial * 13f),
+                               SegmentDistance(p, tip, end - tangent * 4f - radial * 13f)) - half;
+        return Mathf.Min(ring, head);
     }
 
     private IEnumerator SubmitVote(string choice)
@@ -1589,5 +1774,11 @@ public class NarrativeStageView : MonoBehaviour
             Destroy(emotionDisabledSelectedCardTexture);
         if (decisionPressedCardTexture != null)
             Destroy(decisionPressedCardTexture);
+        foreach (var texture in new[] { voteCardTexture, voteCardContinueTexture, voteCardAlternativeTexture,
+                     voteCardDisabledTexture, voteContinueIcon, voteAlternativeIcon })
+        {
+            if (texture != null)
+                Destroy(texture);
+        }
     }
 }
