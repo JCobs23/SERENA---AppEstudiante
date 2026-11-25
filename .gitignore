@@ -76,3 +76,10 @@ sysinfo.txt
 
 # Archivos de compilación de Android (CMake/Gradle)
 .utmp/
+
+# Archivos generados por el IDE y respaldos
+*.csproj
+*.sln
+*.slnx
+*.zip
+.codex/
